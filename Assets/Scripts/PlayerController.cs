@@ -5,35 +5,37 @@ public class PlayerController : MonoBehaviour
     private Rigidbody rb;
     private Renderer sphereRenderer;
     private int totalJumps = 0;
-    private bool isJumping = false; 
-    private float jumpTime = 0f;    
+    private bool isJumping = false;
+    private float jumpTime = 0f;
     
     [Header("Movement Settings")]
-    public float jumpForce = 8f;
+    public float jumpForce = 5f;      
     public float moveSpeed = 5f;
     
     [Header("Ground Detection")]
     public LayerMask groundLayer = 1;
     public float groundCheckDistance = 0.1f;
+    public float groundedCooldown = 0.1f; 
     
     [Header("Squash & Stretch Settings")]
-    public float jumpDeformDuration = 0.5f; // Duración de la deformación por salto
-    public float maxVelocityForStretch = 10f;
+    public float jumpDeformDuration = 0.5f;
+    public float maxVelocityForStretch = 8f;
     public float stretchSpeed = 8f;
     
     [Header("Color Settings")]
     public Color[] jumpColors = new Color[] 
     {
-        Color.white,    // Color inicial
-        Color.blue,     // Después de 2 saltos
-        Color.green,    // Después de 4 saltos
-        Color.yellow,   // Después de 6 saltos
-        Color.red       // Después de 8 saltos
+        Color.white,    
+        Color.blue,     
+        Color.green,    
+        Color.yellow,   
+        Color.red       
     };
     
     private Vector3 originalScale;
     private Vector3 targetScale;
     private bool canJump = true;
+    private float timeGrounded = 0f; 
     
     void Start() 
     {
@@ -58,7 +60,7 @@ public class PlayerController : MonoBehaviour
     
     void HandleMovement()
     {
-        // Movimiento horizontal
+       
         float horizontal = 0f;
         
         if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow))
@@ -69,18 +71,32 @@ public class PlayerController : MonoBehaviour
         Vector3 movement = new Vector3(horizontal * moveSpeed, rb.linearVelocity.y, 0);
         rb.linearVelocity = movement;
         
-        if (Input.GetKeyDown(KeyCode.Space) && canJump && IsGrounded())
+        
+        if (Input.GetKeyDown(KeyCode.Space) && canJump && IsGrounded() && timeGrounded > groundedCooldown)
         {
-            rb.linearVelocity = new Vector3(rb.linearVelocity.x, 0, rb.linearVelocity.z);
-            rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
             
-            isJumping = true;
-            jumpTime = 0f;
+            rb.velocity = new Vector3(rb.velocity.x, 0, rb.velocity.z);
             
-            totalJumps++;
-            UpdateColor();
-            canJump = false;
+            
+            StartCoroutine(ApplyJumpForce());
         }
+    }
+    
+    System.Collections.IEnumerator ApplyJumpForce()
+    {
+        yield return new WaitForFixedUpdate(); 
+        
+       
+        rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
+        
+     
+        isJumping = true;
+        jumpTime = 0f;
+        timeGrounded = 0f; 
+        
+        totalJumps++;
+        UpdateColor();
+        canJump = false;
     }
     
     void UpdateJumpTimer()
@@ -117,8 +133,8 @@ public class PlayerController : MonoBehaviour
             
             if (velocityY > 0) 
             {
-                float stretchY = 1f + (velocityRatio * 0.4f);
-                float squishXZ = 1f - (velocityRatio * 0.2f);
+                float stretchY = 1f + (velocityRatio * 0.3f); 
+                float squishXZ = 1f - (velocityRatio * 0.15f); 
                 
                 targetScale = new Vector3(
                     originalScale.x * squishXZ,
@@ -128,8 +144,8 @@ public class PlayerController : MonoBehaviour
             }
             else // Cayendo
             {
-                float stretchY = 1f + (velocityRatio * 0.5f);
-                float squishXZ = 1f - (velocityRatio * 0.25f);
+                float stretchY = 1f + (velocityRatio * 0.4f); 
+                float squishXZ = 1f - (velocityRatio * 0.2f); 
                 
                 targetScale = new Vector3(
                     originalScale.x * squishXZ,
@@ -138,7 +154,7 @@ public class PlayerController : MonoBehaviour
                 );
             }
         }
-        else 
+        else
         {
             targetScale = originalScale;
         }
@@ -152,11 +168,17 @@ public class PlayerController : MonoBehaviour
         
         if (isGrounded)
         {
+            timeGrounded += Time.deltaTime; 
             canJump = true;
+            
             if (isJumping)
             {
                 isJumping = false;
             }
+        }
+        else
+        {
+            timeGrounded = 0f; 
         }
     }
     
