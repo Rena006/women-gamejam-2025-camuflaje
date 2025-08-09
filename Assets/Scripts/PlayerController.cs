@@ -39,13 +39,13 @@ public class PlayerController : MonoBehaviour
     {
         // Movimiento horizontal
         float horizontal = Input.GetAxis("Horizontal");
-        Vector3 movement = new Vector3(horizontal * moveSpeed, rb.velocity.y, 0);
-        rb.velocity = movement;
+        Vector3 movement = new Vector3(horizontal * moveSpeed, rb.linearVelocity.y, 0);
+        rb.linearVelocity = movement;
         
         // Salto con doble salto
         if (Input.GetKeyDown(KeyCode.Space) && jumpCount < maxJumps)
         {
-            rb.velocity = new Vector3(rb.velocity.x, 0, rb.velocity.z);
+            rb.linearVelocity = new Vector3(rb.linearVelocity.x, 0, rb.linearVelocity.z);
             rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
             jumpCount++;
         }
@@ -54,7 +54,7 @@ public class PlayerController : MonoBehaviour
     void HandleSquashStretch()
     {
         bool isGrounded = IsGrounded();
-        float velocityY = rb.velocity.y;
+        float velocityY = rb.linearVelocity.y;
         
         if (!isGrounded) 
         {
