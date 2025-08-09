@@ -552,10 +552,18 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: -3590075577564461471, guid: 85464dc3927e2e94a9197e10553ce48e, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: 8d91613658c09c74aa744ca401ff8b7d, type: 2}
     - target: {fileID: -1241187549322981273, guid: 85464dc3927e2e94a9197e10553ce48e, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
       value: 
       objectReference: {fileID: 2100000, guid: 38ca7fd73a2fe5f4a9589c1d378ae9a5, type: 2}
+    - target: {fileID: 458816214261179817, guid: 85464dc3927e2e94a9197e10553ce48e, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: b2a94e05f26f5b74ca7d73b12ad9c848, type: 2}
     - target: {fileID: 919132149155446097, guid: 85464dc3927e2e94a9197e10553ce48e, type: 3}
       propertyPath: m_Name
       value: Escenario
