@@ -66,12 +66,12 @@ public class PlayerController : MonoBehaviour
         if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow))
             horizontal = 1f;
         
-        Vector3 movement = new Vector3(horizontal * moveSpeed, rb.velocity.y, 0);
-        rb.velocity = movement;
+        Vector3 movement = new Vector3(horizontal * moveSpeed, rb.linearVelocity.y, 0);
+        rb.linearVelocity = movement;
         
         if (Input.GetKeyDown(KeyCode.Space) && canJump && IsGrounded())
         {
-            rb.velocity = new Vector3(rb.velocity.x, 0, rb.velocity.z);
+            rb.linearVelocity = new Vector3(rb.linearVelocity.x, 0, rb.linearVelocity.z);
             rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
             
             isJumping = true;
@@ -112,7 +112,7 @@ public class PlayerController : MonoBehaviour
         
         if (isJumping && !isGrounded)
         {
-            float velocityY = rb.velocity.y;
+            float velocityY = rb.linearVelocity.y;
             float velocityRatio = Mathf.Clamp01(Mathf.Abs(velocityY) / maxVelocityForStretch);
             
             if (velocityY > 0) 
