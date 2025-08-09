@@ -248,9 +248,8 @@ public class PlayerController : MonoBehaviour
         
         if (shouldDeform && !isGrounded && absVelocityY > minVelocityToDeform)
         {
-            float velocityRatio = Mathf.Clamp01(absVelocityY / maxVelocityForStretch);
-            
-            Vector3 targetScale;
+            float velocityY = rb.velocity.y;
+            float velocityRatio = Mathf.Clamp01(Mathf.Abs(velocityY) / maxVelocityForStretch);
             
             if (velocityY > 0) 
             {
