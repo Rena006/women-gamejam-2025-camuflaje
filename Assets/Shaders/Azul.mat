@@ -7,7 +7,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: Shader Graphs_Color_Example
+  m_Name: Azul
   m_Shader: {fileID: -6465566751694194690, guid: 639e3420dc818a84282de54e35098516, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
