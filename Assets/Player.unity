@@ -598,8 +598,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   target: {fileID: 1668853249}
-  offset: {x: 0, y: 0, z: 0}
+  observerOffset: {x: 5, y: 3, z: 0}
   smoothSpeed: 0.125
+  rotationSpeed: 2
+  alwaysLookAtTarget: 1
+  followDistance: 8
+  heightOffset: 3
+  dynamicObserver: 1
+  orbitSpeed: 30
+  autoOrbit: 0
 --- !u!1 &870709660 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: -2609345561549811183, guid: 85464dc3927e2e94a9197e10553ce48e, type: 3}
@@ -1199,13 +1206,16 @@ MonoBehaviour:
   stretchSpeed: 8
   minVelocityToDeform: 0.5
   landingSquashDuration: 0.4
-  jumpColors:
-  - {r: 1, g: 1, b: 1, a: 1}
-  - {r: 0, g: 0, b: 1, a: 1}
-  - {r: 0, g: 1, b: 0, a: 1}
-  - {r: 1, g: 0.92156863, b: 0.015686275, a: 1}
-  - {r: 1, g: 0, b: 0, a: 1}
+  worldSize: 12
+  fallLimit: -5
+  colorMaterials:
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
   colorTargets: []
+  detectionRange: 3
 --- !u!1 &1736505485
 GameObject:
   m_ObjectHideFlags: 0
@@ -1743,11 +1753,11 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -8679921383154817045, guid: 2c770af0e94529a41809e47e3ba8ac11, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 2
+      value: -0
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 2c770af0e94529a41809e47e3ba8ac11, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0
+      value: 1.93
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 2c770af0e94529a41809e47e3ba8ac11, type: 3}
       propertyPath: m_LocalPosition.z
@@ -1781,6 +1791,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: -7511558181221131132, guid: 2c770af0e94529a41809e47e3ba8ac11, type: 3}
+      propertyPath: 'm_Materials.Array.data[0]'
+      value: 
+      objectReference: {fileID: 2100000, guid: aa153fa444e522846b5d935c2089ebf4, type: 2}
     - target: {fileID: -2571118854743697038, guid: 2c770af0e94529a41809e47e3ba8ac11, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
       value: 
