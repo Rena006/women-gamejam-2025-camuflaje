@@ -708,15 +708,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   target: {fileID: 1668853249}
-  observerOffset: {x: 5, y: 3, z: 0}
+  offset: {x: 0, y: 8, z: -10}
   smoothSpeed: 0.125
+  damping: 0.1
+  lookAtTarget: 1
   rotationSpeed: 2
-  alwaysLookAtTarget: 1
+  enableDynamicCamera: 0
   followDistance: 8
   heightOffset: 3
-  dynamicObserver: 1
   orbitSpeed: 30
-  autoOrbit: 0
 --- !u!1 &684481269
 GameObject:
   m_ObjectHideFlags: 0
@@ -1096,6 +1096,7 @@ GameObject:
   - component: {fileID: 1537278438}
   - component: {fileID: 1537278437}
   - component: {fileID: 1537278440}
+  - component: {fileID: 1537278441}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -1221,6 +1222,28 @@ MonoBehaviour:
     m_MipBias: 0
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
+--- !u!114 &1537278441
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1537278436}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fa9ebae2a7362514193140886ed40202, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  target: {fileID: 1668853249}
+  offset: {x: 0, y: 8, z: -10}
+  smoothSpeed: 3
+  damping: 0.1
+  lookAtTarget: 1
+  rotationSpeed: 2
+  enableDynamicCamera: 0
+  followDistance: 8
+  heightOffset: 3
+  orbitSpeed: 30
 --- !u!1 &1668001515
 GameObject:
   m_ObjectHideFlags: 0
@@ -1525,6 +1548,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   jumpForce: 10
+  moveDistance: 1
   moveSpeed: 5
   groundLayer:
     serializedVersion: 2
@@ -1538,11 +1562,12 @@ MonoBehaviour:
   worldSize: 12
   fallLimit: -5
   colorMaterials:
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
+  - {fileID: 2100000, guid: 440e6b93ddd58b5419d61424a371cab2, type: 2}
+  - {fileID: 2100000, guid: 0a5f83f117aee6341bc1f97a0645c0c8, type: 2}
+  - {fileID: 2100000, guid: 122b1ab6fdb7f5847914cac02dd79e57, type: 2}
+  - {fileID: 2100000, guid: 63ef2e5db1aa53a4aaf26d7a6810ffd7, type: 2}
+  - {fileID: 2100000, guid: 1b47c49d3f1413a42befb16dbb4aaa97, type: 2}
+  - {fileID: 2100000, guid: aa153fa444e522846b5d935c2089ebf4, type: 2}
   colorTargets: []
   detectionRange: 3
 --- !u!1 &1736505485
