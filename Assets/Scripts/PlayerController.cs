@@ -5,19 +5,23 @@ public class PlayerController : MonoBehaviour
 {
     private Rigidbody rb;
     private Renderer sphereRenderer;
-    private Animator playerAnimator;
     private int totalJumps = 0;
-    private bool hasJumped = false;
     
     [Header("Movement Settings")]
     public float jumpForce = 6f;
-    public float moveDistance = 1f; // Distancia por movimiento
-    public float moveSpeed = 5f; // Velocidad de animación
+    public float moveDistance = 1f;
+    public float moveSpeed = 5f;
+    public float moveDuration = 0.3f;
     
     [Header("Ground Detection")]
     public LayerMask groundLayer = -1;
     public float groundCheckDistance = 0.1f;
     public float timeToAllowNextJump = 0.2f;
+    
+    [Header("Collision Detection - NUEVO SISTEMA")]
+    public float raycastDistance = 1.2f; // Distancia de raycast para detectar obstáculos
+    public float playerRadius = 0.5f; // Radio del jugador
+    public bool showDebugRays = true; // Mostrar rayos de debug
     
     [Header("Squash & Stretch Settings")]
     public float maxVelocityForStretch = 8f;
@@ -36,6 +40,10 @@ public class PlayerController : MonoBehaviour
     public GameObject[] colorTargets;
     public float detectionRange = 3f;
     
+    [Header("Debug")]
+    public bool debugMovement = true;
+    
+    // Private fields
     private Vector3 originalScale;
     private float timeGrounded = 0f;
     private bool shouldDeform = false;
@@ -47,568 +55,360 @@ public class PlayerController : MonoBehaviour
     private Vector3 moveStartPos;
     private Vector3 moveTargetPos;
     private float moveTimer = 0f;
-    private float moveDuration = 0.3f;
+    private GameObject currentHideTarget = null;
+    private Vector3 lastValidPosition;
+    
+    // Events
+    public System.Action<bool> OnTransformationChanged;
+    public System.Action<int> OnColorChanged;
     
     void Start() 
+    {
+        InitializeComponents();
+        SetupRigidbody();
+        InitializePosition();
+        FindColorTargets();
+        SetupArcadeColliders();
+        
+        lastValidPosition = transform.position;
+        Debug.Log("*** PLAYER INITIALIZED - RAYCAST COLLISION SYSTEM ***");
+    }
+    
+    void InitializeComponents()
     {
         rb = GetComponent<Rigidbody>();
         sphereRenderer = GetComponent<Renderer>();
         originalScale = transform.localScale;
         
-        // Verificar que el Rigidbody existe
         if (rb == null)
         {
             rb = gameObject.AddComponent<Rigidbody>();
-            Debug.Log("Rigidbody agregado automáticamente");
+            Debug.Log("Rigidbody added automatically");
         }
         
-        // Configurar Rigidbody
-        rb.mass = 1f;
-        rb.linearDamping = 1f;
-        rb.freezeRotation = true;
-        
-        // Desactivar animator AGRESIVAMENTE
         Animator animator = GetComponent<Animator>();
         if (animator != null)
         {
-            animator.enabled = false;
-            Debug.Log("Animator desactivado");
-        }
-        
-        // También destruir si existe
-        if (animator != null)
-        {
             DestroyImmediate(animator);
-            Debug.Log("Animator destruido completamente");
+            Debug.Log("Animator removed");
         }
         
-        // Material inicial
         if (colorMaterials != null && colorMaterials.Length > 0 && colorMaterials[0] != null)
         {
             sphereRenderer.material = colorMaterials[0];
         }
-        
-        FixGroundPosition();
-        FindColorTargets();
-        
-        Debug.Log("*** PELOTA INICIALIZADA ***");
     }
     
-    void FixGroundPosition()
+    void SetupRigidbody()
     {
-        // ALTURA EXACTA DONDE LA PELOTA TOCA EL SUELO
-        float correctHeight = -0.5f; // Altura correcta especificada
+        // SISTEMA SIMPLIFICADO - Sin rigidbody para física
+        rb.mass = 1f;
+        rb.isKinematic = true; // Kinematic pero solo para evitar warnings
+        rb.useGravity = false;
+        
+        Debug.Log("Rigidbody configured as kinematic for collision detection");
+    }
+    
+    void InitializePosition()
+    {
+        float correctHeight = -0.5f;
         Vector3 correctPosition = new Vector3(0, correctHeight, 0);
         transform.position = correctPosition;
         
-        if (rb != null)
+        Debug.Log($"Ball positioned at correct height: Y = {correctHeight}");
+    }
+    
+    void SetupArcadeColliders()
+    {
+        Debug.Log("Setting up arcade machine colliders...");
+        
+        GameObject[] allObjects = Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
+        int collidersAdded = 0;
+        
+        foreach (GameObject obj in allObjects)
         {
-            rb.linearVelocity = Vector3.zero;
-            rb.angularVelocity = Vector3.zero;
+            if (IsArcadeMachine(obj))
+            {
+                if (obj.GetComponent<Collider>() == null)
+                {
+                    BoxCollider collider = obj.AddComponent<BoxCollider>();
+                    
+                    Renderer renderer = obj.GetComponent<Renderer>();
+                    if (renderer != null)
+                    {
+                        Bounds bounds = renderer.bounds;
+                        // Usar bounds del mundo, no locales
+                        collider.size = bounds.size;
+                        collider.center = bounds.center - obj.transform.position;
+                    }
+                    
+                    collidersAdded++;
+                    Debug.Log($"✅ Added collider to: {obj.name}");
+                }
+                else
+                {
+                    Debug.Log($"⚠️ Arcade machine {obj.name} already has collider");
+                }
+            }
         }
         
-        Debug.Log($"Pelota posicionada en altura correcta: Y = {correctHeight}");
+        Debug.Log($"🎮 Added {collidersAdded} colliders to arcade machines");
+    }
+    
+    bool IsArcadeMachine(GameObject obj)
+    {
+        string objName = obj.name.ToLower();
+        return objName.Contains("maquina") || objName.Contains("arcade") || objName.Contains("machine");
     }
     
     void FindColorTargets()
     {
-        Debug.Log("Buscando objetos para camuflaje...");
+        Debug.Log("Searching for camouflage objects...");
         
-        // Buscar todos los objetos con Renderer directamente
-        Renderer[] allRenderers = FindObjectsByType<Renderer>(FindObjectsSortMode.None);
-        System.Collections.Generic.List<GameObject> targets_list = new System.Collections.Generic.List<GameObject>();
+        Renderer[] allRenderers = Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None);
+        System.Collections.Generic.List<GameObject> targetsList = new System.Collections.Generic.List<GameObject>();
         
         foreach (Renderer renderer in allRenderers)
         {
             GameObject obj = renderer.gameObject;
-            // Incluir solo cubos y excluir el player y objetos del sistema
-            if (obj != gameObject && 
-                !obj.name.Contains("Camera") && 
-                !obj.name.Contains("Light") && 
-                !obj.name.Contains("Directional") &&
-                !obj.name.Contains("Plane") &&
-                (obj.name.Contains("Cube") || obj.name.Contains("Target")))
+            if (IsValidTarget(obj))
             {
-                targets_list.Add(obj);
+                targetsList.Add(obj);
             }
         }
         
-        colorTargets = targets_list.ToArray();
-        Debug.Log($"Encontrados {colorTargets.Length} objetos para camuflaje");
-        
-        // Debug de los objetos encontrados
-        foreach (GameObject cube in colorTargets)
-        {
-            Renderer cubeRenderer = cube.GetComponent<Renderer>();
-            if (cubeRenderer != null)
-            {
-                Debug.Log($"Objeto encontrado: {cube.name} - Material: {cubeRenderer.material.name}");
-            }
-        }
+        colorTargets = targetsList.ToArray();
+        Debug.Log($"Found {colorTargets.Length} camouflage objects");
     }
     
-    void SetBallMaterial(int materialIndex)
+    bool IsValidTarget(GameObject obj)
     {
-        if (colorMaterials != null && materialIndex >= 0 && materialIndex < colorMaterials.Length && colorMaterials[materialIndex] != null)
-        {
-            sphereRenderer.material = colorMaterials[materialIndex];
-            Debug.Log($"Material cambiado a: {colorMaterials[materialIndex].name}");
-        }
+        return obj != gameObject && 
+               !obj.name.Contains("Camera") && 
+               !obj.name.Contains("Light") && 
+               !obj.name.Contains("Directional") &&
+               !obj.name.Contains("Plane") &&
+               (obj.name.Contains("Cube") || obj.name.Contains("Target"));
     }
     
     void Update() 
     {
-        // FORZAR POSICIÓN Y CONSTANTEMENTE (solo si no está saltando)
+        ConstrainToGroundLevel();
+        HandleInput();
+        HandleSmoothMovement();
+        UpdateGroundStatus();
+        CheckWorldBounds();
+        CheckShapeMechanics();
+        HandleSquashStretch();
+        UpdateLandingSquash();
+        
+        if (Input.GetKeyDown(KeyCode.M))
+        {
+            Debug.Log($"=== MOVEMENT DEBUG ===");
+            Debug.Log($"isMoving: {isMoving}");
+            Debug.Log($"isJumping: {isJumping}");
+            Debug.Log($"moveTimer: {moveTimer}");
+            Debug.Log($"Position: {transform.position}");
+        }
+    }
+    
+    void ConstrainToGroundLevel()
+    {
         if (!isJumping && transform.position.y != -0.5f)
         {
             Vector3 pos = transform.position;
             pos.y = -0.5f;
             transform.position = pos;
         }
+    }
+    
+    void HandleInput()
+    {
+        if (Input.GetKeyDown(KeyCode.I)) DebugComplete();
+        if (Input.GetKeyDown(KeyCode.R)) ResetPlayer();
         
-        // Manejar movimiento fluido
-        HandleSmoothMovement();
-        
-        HandleMovement3D();
-        
-        // Mantener las funciones existentes pero sin squash/stretch si usamos animaciones
-        UpdateGroundStatus();
-        CheckWorldBounds();
-        CheckShapeMechanics();
-        
-        // DEBUG
-        if (Input.GetKeyDown(KeyCode.I))
+        for (int i = 1; i <= 5; i++)
         {
-            DebugComplete();
+            if (Input.GetKeyDown(KeyCode.Alpha0 + i))
+            {
+                SetBallMaterial(i - 1);
+            }
         }
         
-        // RESET
-        if (Input.GetKeyDown(KeyCode.R))
-        {
-            ResetPlayer();
-        }
+        HandleMovementInput();
         
-        // TEST materiales Y MOVIMIENTO CON NÚMEROS
-        if (Input.GetKeyDown(KeyCode.Alpha1)) 
-        {
-            SetBallMaterial(0);
-            Debug.Log("TECLA 1 PRESIONADA");
-        }
-        if (Input.GetKeyDown(KeyCode.Alpha2)) 
-        {
-            SetBallMaterial(1);
-            Debug.Log("TECLA 2 PRESIONADA");
-        }
-        if (Input.GetKeyDown(KeyCode.Alpha3)) 
-        {
-            SetBallMaterial(2);
-            Debug.Log("TECLA 3 PRESIONADA");
-        }
-        if (Input.GetKeyDown(KeyCode.Alpha4)) 
-        {
-            SetBallMaterial(3);
-            Debug.Log("TECLA 4 PRESIONADA");
-        }
-        if (Input.GetKeyDown(KeyCode.Alpha5)) 
-        {
-            SetBallMaterial(4);
-            Debug.Log("TECLA 5 PRESIONADA");
-        }
-        
-        // MOVIMIENTO ALTERNATIVO CON TECLAS NUMÉRICAS
-        if (Input.GetKeyDown(KeyCode.Alpha6))
-        {
-            Debug.Log("MOVIMIENTO: IZQUIERDA (Tecla 6)");
-            StartSmoothMove(Vector3.left);
-        }
-        if (Input.GetKeyDown(KeyCode.Alpha7))
-        {
-            Debug.Log("MOVIMIENTO: DERECHA (Tecla 7)");
-            StartSmoothMove(Vector3.right);
-        }
-        if (Input.GetKeyDown(KeyCode.Alpha8))
-        {
-            Debug.Log("MOVIMIENTO: ADELANTE (Tecla 8)");
-            StartSmoothMove(Vector3.forward);
-        }
-        if (Input.GetKeyDown(KeyCode.Alpha9))
-        {
-            Debug.Log("MOVIMIENTO: ATRÁS (Tecla 9)");
-            StartSmoothMove(Vector3.back);
-        }
-        
-        // TRANSFORMACIÓN MANUAL
         if (Input.GetKeyDown(KeyCode.T))
         {
-            Debug.Log("*** FORZANDO TRANSFORMACIÓN ***");
-            if (!isTransformed)
-            {
-                TransformToCube();
-            }
-            else
-            {
-                TransformToSphere();
-            }
+            ToggleTransformation();
         }
     }
     
-    void DebugComplete()
+    void HandleMovementInput()
     {
-        Debug.Log("=== DEBUG COMPLETO ===");
-        Debug.Log($"Posición: {transform.position}");
-        Debug.Log($"Velocidad: {rb.linearVelocity}");
-        Debug.Log($"En suelo: {IsGrounded()}");
-        Debug.Log($"Transformado: {isTransformed}");
-        Debug.Log($"Material actual: {sphereRenderer.material.name}");
-        Debug.Log($"Total saltos: {totalJumps}");
-        
-        if (colorTargets != null)
-        {
-            Debug.Log($"Objetos objetivo encontrados: {colorTargets.Length}");
-            foreach (GameObject cube in colorTargets)
-            {
-                if (cube != null)
-                {
-                    float dist = Vector3.Distance(transform.position, cube.transform.position);
-                    Renderer cubeRenderer = cube.GetComponent<Renderer>();
-                    string cubeMaterial = cubeRenderer != null ? cubeRenderer.material.name : "Sin material";
-                    Debug.Log($"  {cube.name}: Distancia={dist:F2}, Material={cubeMaterial}");
-                }
-            }
-        }
-    }
-    
-    void CheckShapeMechanics()
-    {
-        if (colorTargets == null || colorTargets.Length == 0) return;
-        
-        string ballMaterial = sphereRenderer.material.name.Replace(" (Instance)", "").Trim().ToLower();
-        bool foundMatch = false;
-        
-        foreach (GameObject target in colorTargets)
-        {
-            if (target == null) continue;
-            
-            float distance = Vector3.Distance(transform.position, target.transform.position);
-            
-            if (distance < detectionRange)
-            {
-                Renderer targetRenderer = target.GetComponent<Renderer>();
-                if (targetRenderer == null) continue;
-                
-                string targetMaterial = targetRenderer.material.name.Replace(" (Instance)", "").Trim().ToLower();
-                
-                bool isMatch = DoMaterialsMatch(ballMaterial, targetMaterial);
-                
-                if (isMatch)
-                {
-                    foundMatch = true;
-                    Debug.Log($"*** MATCH ENCONTRADO: '{ballMaterial}' == '{targetMaterial}' ***");
-                    
-                    if (!isTransformed)
-                    {
-                        TransformToCube();
-                    }
-                    break;
-                }
-                else
-                {
-                    Debug.Log($"Cerca de {target.name}: '{ballMaterial}' != '{targetMaterial}' (dist: {distance:F2})");
-                }
-            }
-        }
-        
-        if (!foundMatch && isTransformed)
-        {
-            TransformToSphere();
-        }
-    }
-    
-    bool DoMaterialsMatch(string ballMaterial, string targetMaterial)
-    {
-        // Comparación directa
-        if (ballMaterial == targetMaterial) return true;
-        
-        // Buscar números en los nombres
-        string ballNumber = GetMaterialNumber(ballMaterial);
-        string targetNumber = GetMaterialNumber(targetMaterial);
-        
-        if (!string.IsNullOrEmpty(ballNumber) && !string.IsNullOrEmpty(targetNumber))
-        {
-            return ballNumber == targetNumber;
-        }
-        
-        // Comparación por colores comunes
-        string[] colors = {"red", "blue", "green", "yellow", "white", "azul", "verde", "rojo", "amarillo", "blanco", "example"};
-        
-        foreach (string color in colors)
-        {
-            if (ballMaterial.Contains(color) && targetMaterial.Contains(color))
-            {
-                return true;
-            }
-        }
-        
-        return false;
-    }
-    
-    string GetMaterialNumber(string materialName)
-    {
-        for (int i = materialName.Length - 1; i >= 0; i--)
-        {
-            if (char.IsDigit(materialName[i]))
-            {
-                return materialName[i].ToString();
-            }
-        }
-        
-        // Si contiene "example" pero no tiene número, asumimos que es el 0
-        if (materialName.Contains("example") && !materialName.Any(char.IsDigit))
-        {
-            return "0"; 
-        }
-        
-        return "";
-    }
-    
-    void TransformToCube()
-    {
-        isTransformed = true;
-        transform.localScale = originalScale * 0.7f; 
-        CreateTransformEffect(Color.yellow);
-        Debug.Log("*** ¡¡¡TRANSFORMADO A CUBO!!! ***");
-    }
-    
-    void TransformToSphere()
-    {
-        isTransformed = false;
-        transform.localScale = originalScale;
-        CreateTransformEffect(Color.white);
-        Debug.Log("*** VUELTO A ESFERA ***");
-    }
-    
-    void CreateTransformEffect(Color effectColor)
-    {
-        GameObject effect = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        effect.transform.position = transform.position + Vector3.up * 1f;
-        effect.transform.localScale = Vector3.one * 0.8f;
-        effect.GetComponent<Renderer>().material.color = effectColor;
-        
-        // Limpiar collider del efecto
-        Collider effectCollider = effect.GetComponent<Collider>();
-        if (effectCollider != null) Destroy(effectCollider);
-        
-        Destroy(effect, 2f);
-    }
-    
-    void CheckWorldBounds()
-    {
-        Vector3 pos = transform.position;
-        
-        if (pos.x < -worldSize || pos.x > worldSize || 
-            pos.z < -worldSize || pos.z > worldSize || 
-            pos.y < fallLimit)
-        {
-            Debug.Log("Fuera de límites - Reseteando jugador");
-            ResetPlayer();
-        }
-    }
-    
-    void ResetPlayer()
-    {
-        totalJumps = 0;
-        SetBallMaterial(0);
-        
-        shouldDeform = false;
-        isLandingSquash = false;
-        hasJumped = false;
-        isTransformed = false;
-        
-        FixGroundPosition();
-        transform.localScale = originalScale;
-        
-        Debug.Log("*** PELOTA RESETEADA ***");
-    }
-    
-    void HandleMovement3D()
-    {
-        // No permitir nuevo movimiento si ya se está moviendo
         if (isMoving) return;
         
-        // SALTO CON ANIMACIÓN SIMPLE (SIN ANIMATOR)
         if (Input.GetKeyDown(KeyCode.Space) && !isJumping)
         {
             StartSimpleJump();
         }
         
-        // MOVIMIENTO (resto del código igual)
+        // Input Manager (WASD configurado en Unity)
         float horizontal = Input.GetAxisRaw("Horizontal");
         float vertical = Input.GetAxisRaw("Vertical");
         
         if (horizontal != 0 || vertical != 0)
         {
             Vector3 direction = new Vector3(horizontal, 0, vertical).normalized;
-            StartSmoothMove(direction);
-            Debug.Log($"INPUT MANAGER: Movimiento en dirección {direction}");
-            return;
-        }
-        
-        // KeyCodes backup
-        if (Input.GetKeyDown(KeyCode.A))
-        {
-            StartSmoothMove(Vector3.left);
-            Debug.Log("TECLA A DETECTADA - MOVIENDO IZQUIERDA");
-            return;
-        }
-        
-        if (Input.GetKeyDown(KeyCode.D))
-        {
-            StartSmoothMove(Vector3.right);
-            Debug.Log("TECLA D DETECTADA - MOVIENDO DERECHA");
-            return;
-        }
-        
-        if (Input.GetKeyDown(KeyCode.W))
-        {
-            StartSmoothMove(Vector3.forward);
-            Debug.Log("TECLA W DETECTADA - MOVIENDO ADELANTE");
-            return;
-        }
-        
-        if (Input.GetKeyDown(KeyCode.S))
-        {
-            StartSmoothMove(Vector3.back);
-            Debug.Log("TECLA S DETECTADA - MOVIENDO ATRÁS");
-            return;
-        }
-        
-        // Flechas backup
-        if (Input.GetKeyDown(KeyCode.LeftArrow))
-        {
-            StartSmoothMove(Vector3.left);
-            Debug.Log("FLECHA IZQUIERDA DETECTADA");
-            return;
-        }
-        
-        if (Input.GetKeyDown(KeyCode.RightArrow))
-        {
-            StartSmoothMove(Vector3.right);
-            Debug.Log("FLECHA DERECHA DETECTADA");
-            return;
-        }
-        
-        if (Input.GetKeyDown(KeyCode.UpArrow))
-        {
-            StartSmoothMove(Vector3.forward);
-            Debug.Log("FLECHA ARRIBA DETECTADA");
-            return;
-        }
-        
-        if (Input.GetKeyDown(KeyCode.DownArrow))
-        {
-            StartSmoothMove(Vector3.back);
-            Debug.Log("FLECHA ABAJO DETECTADA");
-            return;
-        }
-    }
-    
-    void StartSimpleJump()
-    {
-        if (isJumping) return;
-        
-        isJumping = true;
-        totalJumps++;
-        UpdateColor();
-        
-        Debug.Log($"*** INICIANDO SALTO SIMPLE #{totalJumps} ***");
-        
-        // Iniciar animación de salto simple
-        StartCoroutine(SimpleJumpAnimation());
-    }
-    
-    System.Collections.IEnumerator SimpleJumpAnimation()
-    {
-        float jumpDuration = 0.8f; // Duración total del salto
-        float jumpHeight = 1.5f;   // Altura del salto
-        float timer = 0f;
-        
-        Vector3 startPos = transform.position;
-        Vector3 originalScale = transform.localScale;
-        
-        while (timer < jumpDuration)
-        {
-            timer += Time.deltaTime;
-            float progress = timer / jumpDuration;
-            
-            // PARÁBOLA DE SALTO (matemáticas simples)
-            float height = Mathf.Sin(progress * Mathf.PI) * jumpHeight;
-            Vector3 jumpPos = startPos;
-            jumpPos.y = -0.5f + height; // Base + altura de salto
-            
-            // SQUASH & STRETCH SIMPLE
-            Vector3 scale = originalScale;
-            if (progress < 0.2f)
+            if (CanMoveInDirection(direction))
             {
-                // Compresión inicial
-                float squash = 1f - (progress / 0.2f) * 0.3f;
-                scale.y *= squash;
-                scale.x *= (1f + (1f - squash) * 0.5f);
-                scale.z *= (1f + (1f - squash) * 0.5f);
-            }
-            else if (progress > 0.8f)
-            {
-                // Compresión final
-                float land = ((progress - 0.8f) / 0.2f) * 0.4f;
-                scale.y *= (1f - land);
-                scale.x *= (1f + land);
-                scale.z *= (1f + land);
+                StartSmoothMove(direction);
+                Debug.Log($"INPUT MANAGER: Moving in direction {direction}");
             }
             else
             {
-                // Estiramiento en el aire
-                float stretch = Mathf.Sin((progress - 0.2f) / 0.6f * Mathf.PI) * 0.2f;
-                scale.y *= (1f + stretch);
-                scale.x *= (1f - stretch * 0.3f);
-                scale.z *= (1f - stretch * 0.3f);
+                Debug.Log($"❌ Movement blocked by obstacle!");
             }
-            
-            // Aplicar posición y escala
-            transform.position = jumpPos;
-            transform.localScale = scale;
-            
-            yield return null; // Esperar al siguiente frame
+            return;
         }
         
-        // Finalizar salto
-        Vector3 finalPos = startPos;
-        finalPos.y = -0.5f; // Volver al suelo
-        transform.position = finalPos;
-        transform.localScale = originalScale;
+        // Teclas directas WASD
+        if (Input.GetKeyDown(KeyCode.A)) 
+        {
+            if (CanMoveInDirection(Vector3.left))
+            {
+                StartSmoothMove(Vector3.left);
+                Debug.Log("✅ Moving LEFT");
+            }
+            else Debug.Log("❌ LEFT blocked by obstacle");
+        }
+        if (Input.GetKeyDown(KeyCode.D)) 
+        {
+            if (CanMoveInDirection(Vector3.right))
+            {
+                StartSmoothMove(Vector3.right);
+                Debug.Log("✅ Moving RIGHT");
+            }
+            else Debug.Log("❌ RIGHT blocked by obstacle");
+        }
+        if (Input.GetKeyDown(KeyCode.W)) 
+        {
+            if (CanMoveInDirection(Vector3.forward))
+            {
+                StartSmoothMove(Vector3.forward);
+                Debug.Log("✅ Moving FORWARD");
+            }
+            else Debug.Log("❌ FORWARD blocked by obstacle");
+        }
+        if (Input.GetKeyDown(KeyCode.S)) 
+        {
+            if (CanMoveInDirection(Vector3.back))
+            {
+                StartSmoothMove(Vector3.back);
+                Debug.Log("✅ Moving BACK");
+            }
+            else Debug.Log("❌ BACK blocked by obstacle");
+        }
         
-        isJumping = false;
-        Debug.Log("*** SALTO SIMPLE COMPLETADO ***");
+        // Flechas del teclado
+        if (Input.GetKeyDown(KeyCode.LeftArrow)) 
+        {
+            if (CanMoveInDirection(Vector3.left))
+            {
+                StartSmoothMove(Vector3.left);
+                Debug.Log("✅ Moving LEFT (Arrow)");
+            }
+            else Debug.Log("❌ LEFT (Arrow) blocked");
+        }
+        if (Input.GetKeyDown(KeyCode.RightArrow)) 
+        {
+            if (CanMoveInDirection(Vector3.right))
+            {
+                StartSmoothMove(Vector3.right);
+                Debug.Log("✅ Moving RIGHT (Arrow)");
+            }
+            else Debug.Log("❌ RIGHT (Arrow) blocked");
+        }
+        if (Input.GetKeyDown(KeyCode.UpArrow)) 
+        {
+            if (CanMoveInDirection(Vector3.forward))
+            {
+                StartSmoothMove(Vector3.forward);
+                Debug.Log("✅ Moving FORWARD (Arrow)");
+            }
+            else Debug.Log("❌ FORWARD (Arrow) blocked");
+        }
+        if (Input.GetKeyDown(KeyCode.DownArrow)) 
+        {
+            if (CanMoveInDirection(Vector3.back))
+            {
+                StartSmoothMove(Vector3.back);
+                Debug.Log("✅ Moving BACK (Arrow)");
+            }
+            else Debug.Log("❌ BACK (Arrow) blocked");
+        }
+    }
+    
+    // NUEVO SISTEMA: Verificar colisiones con Raycast ANTES de mover
+    bool CanMoveInDirection(Vector3 direction)
+    {
+        Vector3 startPos = transform.position + Vector3.up * 0.1f; // Ligeramente elevado
+        float checkDistance = raycastDistance;
+        
+        // Raycast principal en el centro
+        if (Physics.Raycast(startPos, direction, out RaycastHit hit, checkDistance))
+        {
+            if (IsArcadeMachine(hit.collider.gameObject))
+            {
+                Debug.Log($"🚫 Center ray blocked by: {hit.collider.gameObject.name} at distance {hit.distance:F2}");
+                return false;
+            }
+        }
+        
+        // Raycasts adicionales en los lados (para mejor detección)
+        Vector3 leftOffset = Vector3.Cross(direction, Vector3.up).normalized * (playerRadius * 0.8f);
+        Vector3 rightOffset = -leftOffset;
+        
+        // Ray izquierdo
+        if (Physics.Raycast(startPos + leftOffset, direction, out hit, checkDistance))
+        {
+            if (IsArcadeMachine(hit.collider.gameObject))
+            {
+                Debug.Log($"🚫 Left ray blocked by: {hit.collider.gameObject.name}");
+                return false;
+            }
+        }
+        
+        // Ray derecho
+        if (Physics.Raycast(startPos + rightOffset, direction, out hit, checkDistance))
+        {
+            if (IsArcadeMachine(hit.collider.gameObject))
+            {
+                Debug.Log($"🚫 Right ray blocked by: {hit.collider.gameObject.name}");
+                return false;
+            }
+        }
+        
+        Debug.Log($"✅ Path clear in direction {direction}");
+        return true;
     }
     
     void StartSmoothMove(Vector3 direction)
     {
-        if (isMoving || isJumping) return;
+        if (isMoving || isJumping) 
+        {
+            Debug.Log($"Cannot move: isMoving={isMoving}, isJumping={isJumping}");
+            return;
+        }
         
         isMoving = true;
         moveTimer = 0f;
         moveStartPos = transform.position;
         
         Vector3 targetPos = moveStartPos + (direction * moveDistance);
-        targetPos.y = 0.25f; // Mantener altura fija
-        
+        targetPos.y = -0.5f;
         moveTargetPos = targetPos;
         
-        Debug.Log($"Iniciando movimiento desde {moveStartPos} hacia {moveTargetPos}");
-        
-        // Activar animación de anticipación si existe
-        if (playerAnimator != null)
-        {
-            playerAnimator.SetTrigger("Anticipacion");
-        }
+        Debug.Log($"🎯 Starting move from {moveStartPos} to {moveTargetPos}");
     }
     
     void HandleSmoothMovement()
@@ -620,61 +420,358 @@ public class PlayerController : MonoBehaviour
         
         if (progress < 1f)
         {
-            // Movimiento suave con curva easing PERO SIN CAMBIAR Y
             float easedProgress = EaseInOutCubic(progress);
             Vector3 newPos = Vector3.Lerp(moveStartPos, moveTargetPos, easedProgress);
-            newPos.y = -0.5f; // FORZAR Y = -0.5 SIEMPRE
+            newPos.y = -0.5f;
+            
+            // Verificación adicional durante el movimiento
+            Vector3 directionToTarget = (moveTargetPos - transform.position).normalized;
+            if (Physics.Raycast(transform.position + Vector3.up * 0.1f, directionToTarget, out RaycastHit hit, 0.8f))
+            {
+                if (IsArcadeMachine(hit.collider.gameObject))
+                {
+                    // Detener movimiento si encontramos obstáculo
+                    isMoving = false;
+                    moveTimer = 0f;
+                    Debug.Log($"🛑 Movement stopped - hit {hit.collider.gameObject.name} during movement");
+                    return;
+                }
+            }
+            
             transform.position = newPos;
+            HandleMovementDeformation(progress);
         }
         else
         {
-            // Completar movimiento con Y fija
             Vector3 finalPos = moveTargetPos;
-            finalPos.y = -0.5f; // FORZAR Y = -0.5
+            finalPos.y = -0.5f;
             transform.position = finalPos;
-            transform.localScale = originalScale; // Restaurar escala sin lerp
+            
+            transform.localScale = originalScale;
             isMoving = false;
             moveTimer = 0f;
-            Debug.Log($"Movimiento completado en posición: {transform.position}");
+            Debug.Log("✅ Movement completed");
         }
     }
     
     void HandleMovementDeformation(float progress)
     {
-        if (isTransformed) return; // No deformar si está transformado
+        if (isTransformed) return;
         
-        // Deformación MUY simple y sutil
         Vector3 scale = originalScale;
-        
-        // Solo un squash muy ligero al inicio y final
         if (progress < 0.1f)
         {
-            // Squash inicial muy sutil
-            float squashAmount = (progress / 0.1f) * 0.05f; // Muy pequeño
+            float squashAmount = (progress / 0.1f) * 0.05f;
             scale.y *= (1f - squashAmount);
             scale.x *= (1f + squashAmount * 0.5f);
             scale.z *= (1f + squashAmount * 0.5f);
         }
         else if (progress > 0.9f)
         {
-            // Squash final muy sutil
-            float landAmount = ((progress - 0.9f) / 0.1f) * 0.05f; // Muy pequeño
+            float landAmount = ((progress - 0.9f) / 0.1f) * 0.05f;
             scale.y *= (1f - landAmount);
             scale.x *= (1f + landAmount * 0.5f);
             scale.z *= (1f + landAmount * 0.5f);
         }
-        // No hay stretch en el medio, solo movimiento natural
-        
-        // Aplicar escala de forma INMEDIATA (sin lerp para evitar jitter)
         transform.localScale = scale;
     }
     
     float EaseInOutCubic(float t)
     {
-        if (t < 0.5f)
+        if (t < 0.5f) 
             return 4f * t * t * t;
-        else
+        else 
             return 1f - Mathf.Pow(-2f * t + 2f, 3f) / 2f;
+    }
+    
+    // Visualización de debug en Scene View
+    void OnDrawGizmos()
+    {
+        if (!showDebugRays || !Application.isPlaying) return;
+        
+        Vector3 pos = transform.position + Vector3.up * 0.1f;
+        Vector3[] directions = { Vector3.forward, Vector3.back, Vector3.left, Vector3.right };
+        Color[] colors = { Color.blue, Color.cyan, Color.red, Color.green };
+        
+        for (int i = 0; i < directions.Length; i++)
+        {
+            Vector3 dir = directions[i];
+            bool canMove = CanMoveInDirection(dir);
+            
+            Gizmos.color = canMove ? colors[i] : Color.red;
+            Gizmos.DrawRay(pos, dir * raycastDistance);
+            
+            // Rayos laterales
+            Vector3 leftOffset = Vector3.Cross(dir, Vector3.up).normalized * (playerRadius * 0.8f);
+            Vector3 rightOffset = -leftOffset;
+            
+            Gizmos.color = canMove ? (colors[i] * 0.7f) : (Color.red * 0.7f);
+            Gizmos.DrawRay(pos + leftOffset, dir * raycastDistance);
+            Gizmos.DrawRay(pos + rightOffset, dir * raycastDistance);
+        }
+        
+        // Radio del jugador
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawWireSphere(transform.position, playerRadius);
+    }
+    
+    void SetBallMaterial(int materialIndex)
+    {
+        if (colorMaterials != null && materialIndex >= 0 && materialIndex < colorMaterials.Length && colorMaterials[materialIndex] != null)
+        {
+            sphereRenderer.material = colorMaterials[materialIndex];
+            OnColorChanged?.Invoke(materialIndex);
+            Debug.Log($"Material changed to: {colorMaterials[materialIndex].name}");
+        }
+    }
+    
+    void CheckShapeMechanics()
+    {
+        if (colorTargets == null || colorTargets.Length == 0) return;
+        
+        string ballMaterial = GetCleanMaterialName(sphereRenderer.material.name);
+        bool foundMatch = false;
+        GameObject matched = null;
+        
+        // DEBUG: Mostrar material actual de la pelota
+        if (Time.frameCount % 120 == 0) // Cada 2 segundos aprox
+        {
+            Debug.Log($"🔍 Ball material: '{ballMaterial}'");
+        }
+        
+        foreach (GameObject target in colorTargets)
+        {
+            if (target == null) continue;
+            
+            float distance = Vector3.Distance(transform.position, target.transform.position);
+            if (distance < detectionRange)
+            {
+                Renderer targetRenderer = target.GetComponent<Renderer>();
+                if (targetRenderer == null) continue;
+                
+                string targetMaterial = GetCleanMaterialName(targetRenderer.material.name);
+                bool isMatch = DoMaterialsMatch(ballMaterial, targetMaterial);
+                
+                // DEBUG: Mostrar comparación
+                Debug.Log($"🎯 Near {target.name}: Ball='{ballMaterial}' vs Target='{targetMaterial}' | Match: {isMatch} | Distance: {distance:F2}");
+                
+                if (isMatch)
+                {
+                    foundMatch = true;
+                    matched = target;
+                    if (!isTransformed) 
+                    {
+                        TransformToCube();
+                        Debug.Log($"✅ CAMOUFLAGE ACTIVATED with {target.name}!");
+                    }
+                    break;
+                }
+            }
+        }
+        
+        UpdateHideStatus(foundMatch, matched);
+    }
+    
+    void UpdateHideStatus(bool foundMatch, GameObject matched)
+    {
+        if (foundMatch)
+        {
+            currentHideTarget = matched;
+        }
+        else
+        {
+            if (currentHideTarget != null)
+            {
+                float distance = Vector3.Distance(transform.position, currentHideTarget.transform.position);
+                if (distance > detectionRange + 0.25f) 
+                {
+                    currentHideTarget = null;
+                }
+            }
+            
+            if (isTransformed && currentHideTarget == null)
+            {
+                TransformToSphere();
+            }
+        }
+    }
+    
+    string GetCleanMaterialName(string materialName)
+    {
+        return materialName.Replace(" (Instance)", "").Trim().ToLower();
+    }
+    
+    bool DoMaterialsMatch(string ballMaterial, string targetMaterial)
+    {
+        // Comparación exacta primero
+        if (ballMaterial == targetMaterial) 
+        {
+            Debug.Log($"✅ EXACT MATCH: '{ballMaterial}' == '{targetMaterial}'");
+            return true;
+        }
+        
+        // Check for number matching
+        string ballNumber = GetMaterialNumber(ballMaterial);
+        string targetNumber = GetMaterialNumber(targetMaterial);
+        if (!string.IsNullOrEmpty(ballNumber) && !string.IsNullOrEmpty(targetNumber))
+        {
+            bool numberMatch = ballNumber == targetNumber;
+            if (numberMatch)
+                Debug.Log($"✅ NUMBER MATCH: Ball#{ballNumber} == Target#{targetNumber}");
+            else
+                Debug.Log($"❌ Number mismatch: Ball#{ballNumber} != Target#{targetNumber}");
+            return numberMatch;
+        }
+        
+        // Check for color name matching
+        string[] colors = { 
+            "red", "blue", "green", "yellow", "white", "orange", "purple", "black",
+            "azul", "verde", "rojo", "amarillo", "blanco", "naranja", "morado", "negro",
+            "example", "color", "material"
+        };
+        
+        foreach (string color in colors)
+        {
+            bool ballHasColor = ballMaterial.Contains(color);
+            bool targetHasColor = targetMaterial.Contains(color);
+            
+            if (ballHasColor && targetHasColor)
+            {
+                Debug.Log($"✅ COLOR MATCH: Both contain '{color}'");
+                return true;
+            }
+        }
+        
+        Debug.Log($"❌ NO MATCH: '{ballMaterial}' vs '{targetMaterial}'");
+        return false;
+    }
+    
+    string GetMaterialNumber(string materialName)
+    {
+        for (int i = materialName.Length - 1; i >= 0; i--)
+        {
+            if (char.IsDigit(materialName[i])) 
+                return materialName[i].ToString();
+        }
+        
+        if (materialName.Contains("example") && !materialName.Any(char.IsDigit)) 
+            return "0";
+            
+        return "";
+    }
+    
+    void ToggleTransformation()
+    {
+        if (!isTransformed)
+            TransformToCube();
+        else
+            TransformToSphere();
+    }
+    
+    void TransformToCube()
+    {
+        isTransformed = true;
+        transform.localScale = originalScale * 0.7f; 
+        CreateTransformEffect(Color.yellow);
+        OnTransformationChanged?.Invoke(true);
+        Debug.Log("*** TRANSFORMED TO CUBE! ***");
+    }
+    
+    void TransformToSphere()
+    {
+        isTransformed = false;
+        currentHideTarget = null;
+        transform.localScale = originalScale;
+        CreateTransformEffect(Color.white);
+        OnTransformationChanged?.Invoke(false);
+        Debug.Log("*** BACK TO SPHERE ***");
+    }
+    
+    void CreateTransformEffect(Color effectColor)
+    {
+        GameObject effect = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        effect.transform.position = transform.position + Vector3.up * 1f;
+        effect.transform.localScale = Vector3.one * 0.8f;
+        effect.GetComponent<Renderer>().material.color = effectColor;
+        
+        Collider effectCollider = effect.GetComponent<Collider>();
+        if (effectCollider != null) Destroy(effectCollider);
+        
+        Destroy(effect, 2f);
+    }
+    
+    void StartSimpleJump()
+    {
+        if (isJumping) return;
+        
+        isJumping = true;
+        totalJumps++;
+        UpdateColor();
+        Debug.Log($"*** STARTING SIMPLE JUMP #{totalJumps} ***");
+        StartCoroutine(SimpleJumpAnimation());
+    }
+    
+    System.Collections.IEnumerator SimpleJumpAnimation()
+    {
+        float jumpDuration = 0.8f;
+        float jumpHeight = 1.5f;
+        float timer = 0f;
+        
+        Vector3 startPos = transform.position;
+        Vector3 originalJumpScale = transform.localScale;
+        
+        while (timer < jumpDuration)
+        {
+            timer += Time.deltaTime;
+            float progress = timer / jumpDuration;
+            
+            float height = Mathf.Sin(progress * Mathf.PI) * jumpHeight;
+            Vector3 jumpPos = startPos;
+            jumpPos.y = -0.5f + height;
+            
+            Vector3 scale = CalculateJumpScale(progress, originalJumpScale);
+            
+            transform.position = jumpPos;
+            transform.localScale = scale;
+            yield return null;
+        }
+        
+        Vector3 finalPos = startPos;
+        finalPos.y = -0.5f;
+        transform.position = finalPos;
+        transform.localScale = originalJumpScale;
+        
+        isJumping = false;
+        Debug.Log("*** SIMPLE JUMP COMPLETED ***");
+    }
+    
+    Vector3 CalculateJumpScale(float progress, Vector3 baseScale)
+    {
+        Vector3 scale = baseScale;
+        
+        if (progress < 0.2f)
+        {
+            float squash = 1f - (progress / 0.2f) * 0.3f;
+            scale.y *= squash;
+            scale.x *= (1f + (1f - squash) * 0.5f);
+            scale.z *= (1f + (1f - squash) * 0.5f);
+        }
+        else if (progress > 0.8f)
+        {
+            float land = ((progress - 0.8f) / 0.2f) * 0.4f;
+            scale.y *= (1f - land);
+            scale.x *= (1f + land);
+            scale.z *= (1f + land);
+        }
+        else
+        {
+            float stretch = Mathf.Sin((progress - 0.2f) / 0.6f * Mathf.PI) * 0.2f;
+            scale.y *= (1f + stretch);
+            scale.x *= (1f - stretch * 0.3f);
+            scale.z *= (1f - stretch * 0.3f);
+        }
+        
+        return scale;
     }
     
     void UpdateColor()
@@ -682,10 +779,9 @@ public class PlayerController : MonoBehaviour
         int materialIndex = (totalJumps / 2) % colorMaterials.Length;
         SetBallMaterial(materialIndex);
         
-        string[] colorNames = {"BLANCO", "AZUL", "VERDE", "ROJO", "AMARILLO"};
+        string[] colorNames = {"WHITE", "BLUE", "GREEN", "RED", "YELLOW"};
         string colorName = materialIndex < colorNames.Length ? colorNames[materialIndex] : $"COLOR_{materialIndex}";
-        
-        Debug.Log($"*** CAMBIO A: {colorName} (Saltos: {totalJumps}) ***");
+        Debug.Log($"*** CHANGED TO: {colorName} (Jumps: {totalJumps}) ***");
     }
     
     void HandleSquashStretch()
@@ -693,40 +789,16 @@ public class PlayerController : MonoBehaviour
         if (isLandingSquash || isTransformed) return;
         
         bool isGrounded = IsGrounded();
-        float velocityY = rb.linearVelocity.y;
-        float absVelocityY = Mathf.Abs(velocityY);
         
-        if (shouldDeform && !isGrounded && absVelocityY > minVelocityToDeform)
+        if (shouldDeform && !isGrounded)
         {
-            float velocityRatio = Mathf.Clamp01(absVelocityY / maxVelocityForStretch);
-            Vector3 targetScale;
-            
-            if (velocityY > 0)
-            {
-                // Subiendo - estirar hacia arriba
-                float stretchY = 1f + (velocityRatio * 2.0f);
-                float squishXZ = 1f - (velocityRatio * 0.6f);
-                
-                targetScale = new Vector3(
-                    originalScale.x * squishXZ,  
-                    originalScale.y * stretchY,   
-                    originalScale.z * squishXZ    
-                );
-            }
-            else
-            {
-                // Bajando - estirar hacia abajo
-                float stretchY = 1f + (velocityRatio * 2.5f);
-                float squishXZ = 1f - (velocityRatio * 0.7f);
-                
-                targetScale = new Vector3(
-                    originalScale.x * squishXZ,   
-                    originalScale.y * stretchY,   
-                    originalScale.z * squishXZ    
-                );
-            }
-            
-            transform.localScale = Vector3.Lerp(transform.localScale, targetScale, Time.deltaTime * stretchSpeed);
+            float stretchAmount = 0.2f;
+            Vector3 stretchScale = new Vector3(
+                originalScale.x * (1f - stretchAmount * 0.3f),
+                originalScale.y * (1f + stretchAmount),
+                originalScale.z * (1f - stretchAmount * 0.3f)
+            );
+            transform.localScale = Vector3.Lerp(transform.localScale, stretchScale, Time.deltaTime * stretchSpeed);
         }
         else if (shouldDeform && isGrounded) 
         {
@@ -737,13 +809,9 @@ public class PlayerController : MonoBehaviour
         else if (!shouldDeform && !isLandingSquash)
         {
             if (Vector3.Distance(transform.localScale, originalScale) > 0.01f)
-            {
                 transform.localScale = Vector3.Lerp(transform.localScale, originalScale, Time.deltaTime * stretchSpeed);
-            }
             else
-            {
                 transform.localScale = originalScale;
-            }
         }
     }
     
@@ -756,7 +824,6 @@ public class PlayerController : MonoBehaviour
             
             if (progress < 0.3f)
             {
-                // Fase de squash
                 float squashProgress = progress / 0.3f;
                 Vector3 landSquash = new Vector3(
                     originalScale.x * Mathf.Lerp(1f, 1.8f, squashProgress),
@@ -767,7 +834,6 @@ public class PlayerController : MonoBehaviour
             }
             else
             {
-                // Fase de recuperación
                 float returnProgress = (progress - 0.3f) / 0.7f;
                 Vector3 maxSquash = new Vector3(originalScale.x * 1.8f, originalScale.y * 0.3f, originalScale.z * 1.8f);
                 transform.localScale = Vector3.Lerp(maxSquash, originalScale, returnProgress);
@@ -785,15 +851,9 @@ public class PlayerController : MonoBehaviour
     void UpdateGroundStatus()
     {
         bool isGrounded = IsGrounded();
-        
         if (isGrounded)
         {
             timeGrounded += Time.deltaTime;
-            
-            if (timeGrounded > timeToAllowNextJump)
-            {
-                hasJumped = false;
-            }
         }
         else
         {
@@ -801,9 +861,128 @@ public class PlayerController : MonoBehaviour
         }
     }
     
+    void CheckWorldBounds()
+    {
+        Vector3 pos = transform.position;
+        if (pos.x < -worldSize || pos.x > worldSize || 
+            pos.z < -worldSize || pos.z > worldSize || 
+            pos.y < fallLimit)
+        {
+            Debug.Log("Out of bounds - Resetting player");
+            ResetPlayer();
+        }
+    }
+    
     bool IsGrounded()
     {
-        // DETECCIÓN SUPER SIMPLE - siempre en el suelo para debugging
-        return true; // Temporalmente siempre en suelo para que pueda saltar
+        return transform.position.y <= -0.4f;
+    }
+    
+    public void ResetPlayer()
+    {
+        totalJumps = 0;
+        SetBallMaterial(0);
+        
+        shouldDeform = false;
+        isLandingSquash = false;
+        isTransformed = false;
+        currentHideTarget = null;
+        
+        InitializePosition();
+        transform.localScale = originalScale;
+        
+        OnTransformationChanged?.Invoke(false);
+        OnColorChanged?.Invoke(0);
+        
+        Debug.Log("*** PLAYER RESET ***");
+    }
+    
+    void DebugComplete()
+    {
+        Debug.Log("=== COMPLETE DEBUG ===");
+        Debug.Log($"Position: {transform.position}");
+        Debug.Log($"On Ground: {IsGrounded()}");
+        Debug.Log($"Transformed: {isTransformed}");
+        Debug.Log($"Current Material: {sphereRenderer.material.name}");
+        Debug.Log($"Total Jumps: {totalJumps}");
+        if (currentHideTarget) Debug.Log($"Hidden near: {currentHideTarget.name}");
+        
+        if (colorTargets != null)
+        {
+            Debug.Log($"Target objects found: {colorTargets.Length}");
+            foreach (GameObject target in colorTargets)
+            {
+                if (target != null)
+                {
+                    float dist = Vector3.Distance(transform.position, target.transform.position);
+                    Renderer targetRenderer = target.GetComponent<Renderer>();
+                    string targetMaterial = targetRenderer != null ? targetRenderer.material.name : "No material";
+                    Debug.Log($"  {target.name}: Distance={dist:F2}, Material={targetMaterial}");
+                }
+            }
+        }
+    }
+    
+    // Public API for NPC
+    public bool IsPlayerTransformed() => isTransformed;
+    
+    public bool IsHiddenForNPC()
+    {
+        if (!isTransformed || currentHideTarget == null) return false;
+        float distance = Vector3.Distance(transform.position, currentHideTarget.transform.position);
+        return distance <= detectionRange + 0.05f;
+    }
+    
+    public GameObject GetCurrentHideTarget() => currentHideTarget;
+    
+    [ContextMenu("Setup Arcade Colliders")]
+    public void ForceSetupArcadeColliders()
+    {
+        SetupArcadeColliders();
+    }
+    
+    [ContextMenu("List Collision Objects")]
+    public void ListCollisionObjects()
+    {
+        GameObject[] allObjects = Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
+        Debug.Log("=== COLLISION OBJECTS ===");
+        
+        foreach (GameObject obj in allObjects)
+        {
+            if (IsArcadeMachine(obj))
+            {
+                Collider collider = obj.GetComponent<Collider>();
+                string colliderInfo = collider != null ? $"✅ {collider.GetType().Name}" : "❌ NO COLLIDER";
+                Debug.Log($"{obj.name}: {colliderInfo}");
+            }
+        }
+    }
+    
+    [ContextMenu("Debug Camouflage System")]
+    public void DebugCamouflageSystem()
+    {
+        Debug.Log("=== CAMOUFLAGE DEBUG ===");
+        Debug.Log($"Ball Material: '{GetCleanMaterialName(sphereRenderer.material.name)}'");
+        Debug.Log($"Is Transformed: {isTransformed}");
+        Debug.Log($"Detection Range: {detectionRange}");
+        Debug.Log($"Color Targets Found: {(colorTargets != null ? colorTargets.Length : 0)}");
+        
+        if (colorTargets != null)
+        {
+            foreach (GameObject target in colorTargets)
+            {
+                if (target != null)
+                {
+                    float dist = Vector3.Distance(transform.position, target.transform.position);
+                    Renderer targetRenderer = target.GetComponent<Renderer>();
+                    if (targetRenderer != null)
+                    {
+                        string targetMaterial = GetCleanMaterialName(targetRenderer.material.name);
+                        bool isMatch = DoMaterialsMatch(GetCleanMaterialName(sphereRenderer.material.name), targetMaterial);
+                        Debug.Log($"  {target.name}: '{targetMaterial}' | Distance: {dist:F2} | Match: {isMatch}");
+                    }
+                }
+            }
+        }
     }
 }
