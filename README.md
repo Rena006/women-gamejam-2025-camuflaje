@@ -1,6 +1,6 @@
 # Camouflage Game
 
-![Camouflage](./camuflaje.jpg)
+![Camouflage](./images/camuflaje.jpg)
 
 Juego en Unity donde el jugador debe sobrevivir evitando enemigos que patrullan el escenario.
 
