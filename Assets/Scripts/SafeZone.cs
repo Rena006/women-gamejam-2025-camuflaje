@@ -1,142 +1,195 @@
 using UnityEngine;
 
-[RequireComponent(typeof(SphereCollider))]
 public class SafeZone : MonoBehaviour
 {
-    [Header("Safe Zone")]
+    [Header("Safe Zone Settings")]
     public float radius = 4f;
-    public Color safeZoneColor = new Color(0f, 1f, 0f, 0.5f);
-    public float timeToWin = 5f;
+    public Color safeZoneColor = Color.green;
+    public Color warningColor = Color.yellow;
+    public float winTime = 5f;
 
-    [Header("Visual Options")]
-    public float lift = 0.05f;            // eleva el visual para evitar z-fighting
-    public float ringWidth = 0.06f;       // grosor del LineRenderer
-    public int ringSegments = 64;         // calidad del círculo
+    [Header("Visual Effects")]
+    public bool showVisualIndicator = true;
+    public Material safeZoneMaterial;
+    public GameObject visualEffect;
 
-    private SphereCollider triggerCol;
-    private PlayerController player;
+    [Header("Audio")]
+    public AudioSource audioSource;
+    public AudioClip enterSound;
+    public AudioClip winSound;
+
+    // Private variables
+    private bool playerInZone = false;
     private float timeInZone = 0f;
-    private bool playerInside = false;
+    private PlayerController player;
+    private EnemyNPC enemy;
+    private GameManager gameManager;
+    private GameObject visualIndicator;
+    private bool gameWon = false;
 
-    private GameObject visualDisk;        // disco visible
-    private LineRenderer ring;            // aro visible
-
-    void Awake()
+    void Start()
     {
-        // Collider trigger del área
-        triggerCol = GetComponent<SphereCollider>();
-        triggerCol.isTrigger = true;
-        triggerCol.radius = radius;
-
-        // Busca player
-        var pObj = GameObject.FindWithTag("Player") ?? GameObject.Find("Player");
-        if (pObj) player = pObj.GetComponent<PlayerController>();
-        if (player == null) player = FindFirstObjectByType<PlayerController>();
-
-        CreateVisuals();
+        InitializeComponents();
+        CreateVisualIndicator();
+        Debug.Log($"🛡️ Safe Zone created at {transform.position} with radius {radius}");
     }
 
-    void CreateVisuals()
+    void InitializeComponents()
     {
-        // ----- DISCO (cilindro muy bajo) -----
-        visualDisk = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        visualDisk.name = "SafeZone_Disk";
-        visualDisk.transform.SetParent(transform, false);
-        visualDisk.transform.localPosition = new Vector3(0f, lift, 0f);
-        visualDisk.transform.localRotation = Quaternion.identity;
-        visualDisk.transform.localScale = new Vector3(radius * 2f, 0.02f, radius * 2f); // diámetro = 2*radio
-        Destroy(visualDisk.GetComponent<Collider>());
+        player = FindFirstObjectByType<PlayerController>();
+        enemy = FindFirstObjectByType<EnemyNPC>();
+        gameManager = FindFirstObjectByType<GameManager>();
 
-        var mr = visualDisk.GetComponent<Renderer>();
-        mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        mr.receiveShadows = false;
-        mr.material = BuildTransparentUnlitMaterial(safeZoneColor);
+        if (audioSource == null) audioSource = GetComponent<AudioSource>();
+        if (audioSource == null) audioSource = gameObject.AddComponent<AudioSource>();
+        audioSource.playOnAwake = false;
+        audioSource.spatialBlend = 1f;
+    }
 
-        // ----- ARO (LineRenderer) -----
-        var ringObj = new GameObject("SafeZone_Ring");
-        ringObj.transform.SetParent(transform, false);
-        ringObj.transform.localPosition = new Vector3(0f, lift * 1.5f, 0f);
+    void CreateVisualIndicator()
+    {
+        if (!showVisualIndicator) return;
 
-        ring = ringObj.AddComponent<LineRenderer>();
-        ring.useWorldSpace = false;
-        ring.loop = true;
-        ring.widthMultiplier = ringWidth;
-        ring.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        ring.receiveShadows = false;
-        ring.material = BuildTransparentUnlitMaterial(new Color(safeZoneColor.r, safeZoneColor.g, safeZoneColor.b, 0.9f));
-        ring.positionCount = ringSegments;
+        visualIndicator = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        visualIndicator.name = "SafeZone_Visual";
+        visualIndicator.transform.SetParent(transform);
 
-        Vector3[] pts = new Vector3[ringSegments];
-        for (int i = 0; i < ringSegments; i++)
+        // pequeño offset en Y para evitar z-fighting con el suelo
+        visualIndicator.transform.localPosition = new Vector3(0f, 0.02f, 0f);
+        visualIndicator.transform.localScale = new Vector3(radius * 2f, 0.05f, radius * 2f);
+
+        var r = visualIndicator.GetComponent<Renderer>();
+
+        if (safeZoneMaterial != null)
         {
-            float t = (i / (float)ringSegments) * Mathf.PI * 2f;
-            pts[i] = new Vector3(Mathf.Cos(t) * radius, 0f, Mathf.Sin(t) * radius);
+            r.material = safeZoneMaterial;
         }
-        ring.SetPositions(pts);
-    }
+        else
+        {
+            // Asegurar shader transparente
+            Shader sh = Shader.Find("Unlit/Color");
+            if (sh == null) sh = Shader.Find("Legacy Shaders/Particles/Alpha Blended");
+            r.material = new Material(sh);
 
-    Material BuildTransparentUnlitMaterial(Color c)
-    {
-        // Intenta URP/Unlit -> Unlit/Color -> Standard (fallback)
-        Shader sh = Shader.Find("Universal Render Pipeline/Unlit");
-        if (sh == null) sh = Shader.Find("Unlit/Color");
-        if (sh == null) sh = Shader.Find("Standard");
+            Color c = safeZoneColor;
+            c.a = 0.35f;
+            r.material.color = c;
+        }
 
-        var mat = new Material(sh);
-
-        // Color + transparencia (funciona con URP/Unlit y Unlit/Color; en Standard se verá opaco si no se cambia el modo)
-        if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", c); // URP
-        if (mat.HasProperty("_Color"))     mat.SetColor("_Color", c);     // Unlit/Color o Standard
-
-        // Asegura que se renderice después del suelo para evitar parpadeo
-        mat.renderQueue = 3000; // Transparent
-        return mat;
+        // quitar collider (solo visual)
+        var col = visualIndicator.GetComponent<Collider>();
+        if (col != null) Destroy(col);
     }
 
     void Update()
     {
-        if (!player) return;
+        if (gameWon || player == null) return;
 
-        float dist = Vector3.Distance(
-            new Vector3(player.transform.position.x, transform.position.y, player.transform.position.z),
-            transform.position
-        );
+        CheckPlayerInZone();
+        UpdateVisualFeedback();
 
-        bool inRange = dist <= radius + 0.05f;
-        if (inRange) { playerInside = true; timeInZone += Time.deltaTime; }
-        else { playerInside = false; timeInZone = 0f; }
+        if (playerInZone) UpdateWinProgress();
     }
 
-    void OnValidate()
+    void CheckPlayerInZone()
     {
-        if (triggerCol == null) triggerCol = GetComponent<SphereCollider>();
-        if (triggerCol != null) triggerCol.radius = radius;
+        float distanceToPlayer = Vector3.Distance(transform.position, player.transform.position);
+        bool wasInZone = playerInZone;
+        playerInZone = distanceToPlayer <= radius;
 
-        if (visualDisk != null)
-            visualDisk.transform.localScale = new Vector3(radius * 2f, 0.02f, radius * 2f);
+        if (playerInZone && !wasInZone) OnPlayerEnterZone();
+        else if (!playerInZone && wasInZone) OnPlayerExitZone();
+    }
 
-        if (ring != null)
+    void OnPlayerEnterZone()
+    {
+        timeInZone = 0f;
+        Debug.Log("🛡️ Player entered SAFE ZONE! Stay for 5 seconds to win!");
+        if (enterSound != null && audioSource != null) audioSource.PlayOneShot(enterSound);
+    }
+
+    void OnPlayerExitZone()
+    {
+        timeInZone = 0f;
+        Debug.Log("❌ Player left safe zone - progress reset");
+    }
+
+    void UpdateWinProgress()
+    {
+        timeInZone += Time.deltaTime;
+
+        float timeLeft = winTime - timeInZone;
+        int s = Mathf.CeilToInt(timeLeft);
+        int sPrev = Mathf.CeilToInt(timeLeft + Time.deltaTime);
+        if (s != sPrev && s > 0) Debug.Log($"🛡️ Safe zone countdown: {s} seconds to victory!");
+
+        if (timeInZone >= winTime) TriggerVictory();
+    }
+
+    void TriggerVictory()
+    {
+        if (gameWon) return;
+        gameWon = true;
+
+        Debug.Log("🎉 VICTORY! Player reached safe zone!");
+        if (winSound != null && audioSource != null) audioSource.PlayOneShot(winSound);
+        CreateVictoryEffect();
+
+        if (gameManager != null) gameManager.TriggerVictory();
+        if (enemy != null) enemy.enabled = false;
+    }
+
+    void UpdateVisualFeedback()
+    {
+        if (visualIndicator == null) return;
+
+        var r = visualIndicator.GetComponent<Renderer>();
+        if (r == null || r.material == null) return;
+
+        if (playerInZone)
         {
-            ring.positionCount = ringSegments;
-            Vector3[] pts = new Vector3[ringSegments];
-            for (int i = 0; i < ringSegments; i++)
-            {
-                float t = (i / (float)ringSegments) * Mathf.PI * 2f;
-                pts[i] = new Vector3(Mathf.Cos(t) * radius, 0f, Mathf.Sin(t) * radius);
-            }
-            ring.SetPositions(pts);
-            ring.widthMultiplier = ringWidth;
+            float progress = timeInZone / winTime;
+            Color c = Color.Lerp(warningColor, safeZoneColor, progress);
+            c.a = 0.5f + (progress * 0.3f);
+            r.material.color = c;
+
+            float pulse = 1f + Mathf.Sin(Time.time * 5f) * 0.2f;
+            visualIndicator.transform.localScale = new Vector3(radius * 2f * pulse, 0.05f, radius * 2f * pulse);
+        }
+        else
+        {
+            Color c = safeZoneColor; c.a = 0.35f;
+            r.material.color = c;
+            visualIndicator.transform.localScale = new Vector3(radius * 2f, 0.05f, radius * 2f);
         }
     }
 
-    // API para GameManager
-    public bool IsPlayerInZone() => playerInside;
-    public float GetWinProgress() => Mathf.Clamp01(timeInZone / Mathf.Max(0.01f, timeToWin));
-    public float GetTimeInZone() => timeInZone;
+    void CreateVictoryEffect()
+    {
+        for (int i = 0; i < 10; i++)
+        {
+            var fx = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            fx.transform.position = transform.position + Random.insideUnitSphere * radius;
+            fx.transform.localScale = Vector3.one * Random.Range(0.2f, 0.5f);
+            var rr = fx.GetComponent<Renderer>();
+            if (rr != null) rr.material.color = Color.green;
+            var col = fx.GetComponent<Collider>();
+            if (col != null) Destroy(col);
+            Destroy(fx, 3f);
+        }
+    }
 
+    // API pública usada por GameManager
+    public bool IsPlayerInZone() => playerInZone;
+    public float GetTimeInZone() => timeInZone;
+    public float GetWinProgress() => Mathf.Clamp01(timeInZone / Mathf.Max(0.01f, winTime));
+
+    // Gizmos
     void OnDrawGizmos()
     {
-        Gizmos.color = safeZoneColor;
-        Gizmos.DrawWireSphere(new Vector3(transform.position.x, transform.position.y, transform.position.z), radius);
+        Gizmos.color = playerInZone ? safeZoneColor : warningColor;
+        Gizmos.DrawWireSphere(transform.position, radius);
+        Gizmos.color = new Color(safeZoneColor.r, safeZoneColor.g, safeZoneColor.b, 0.1f);
+        Gizmos.DrawSphere(transform.position, radius);
     }
 }

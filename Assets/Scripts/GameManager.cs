@@ -8,45 +8,45 @@ public class GameManager : MonoBehaviour
     [Header("Game Objects")]
     public PlayerController player;
     public EnemyNPC enemy;
-    
+
     [Header("UI Panels")]
     public Canvas mainUI;
     public GameObject gameOverPanel;
     public GameObject victoryPanel;
     public GameObject hudPanel;
-    
+
     [Header("UI Text Elements")]
     public Text statusText;
     public Text timerText;
     public Text escapeProgressText;
     public Text gameOverText;
     public Text victoryText;
-    
+
     [Header("UI Buttons")]
-    public Button restartButton;                 // Game Over: solo este
+    public Button restartButton;
+    public Button mainMenuButton;
     public Button victoryRestartButton;
-    public Button victoryMainMenuButton;         // Victory sí mantiene Main Menu
-    
+
     [Header("Game Settings")]
     public bool showTimer = true;
     public bool showEscapeProgress = true;
     public float gameTime = 0f;
-    
+
     [Header("Audio")]
     public AudioSource gameAudioSource;
     public AudioClip gameOverSound;
     public AudioClip victorySound;
     public AudioClip backgroundMusic;
-    
+
     [Header("Scene Names")]
     public string mainMenuSceneName = "MainMenu";
     public string gameSceneName = "Game";
-    
+
     private bool gameStarted = false;
     private bool gameOver = false;
     private bool victoryAchieved = false;
     private float startTime;
-    
+
     void Start()
     {
         InitializeGame();
@@ -54,17 +54,20 @@ public class GameManager : MonoBehaviour
         SetupAudio();
         StartGame();
     }
-    
+
     void InitializeGame()
     {
         if (player == null) player = FindFirstObjectByType<PlayerController>();
-        if (enemy == null)  enemy  = FindFirstObjectByType<EnemyNPC>();
+        if (enemy == null) enemy = FindFirstObjectByType<EnemyNPC>();
+
         if (mainUI == null) CreateUI();
         startTime = Time.time;
     }
-    
+
+    // ---------- UI CREATION ----------
     void CreateUI()
     {
+        // Canvas raíz
         GameObject canvasObj = new GameObject("GameCanvas");
         mainUI = canvasObj.AddComponent<Canvas>();
         mainUI.renderMode = RenderMode.ScreenSpaceOverlay;
@@ -80,229 +83,131 @@ public class GameManager : MonoBehaviour
         CreateGameOverPanel();
         CreateVictoryPanel();
     }
-    
+
+    // Helper para crear un Text
+    Text CreateText(string name, Transform parent, string txt, int size, Color color, TextAnchor align)
+    {
+        var go = new GameObject(name, typeof(RectTransform));
+        go.transform.SetParent(parent, false);
+        var t = go.AddComponent<Text>();
+        t.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        t.fontSize = size;
+        t.color = color;
+        t.text = txt;
+        t.alignment = align;
+        t.raycastTarget = false; // ¡no bloquear botones!
+        return t;
+    }
+
     void CreateHUDPanel()
     {
-        // Panel HUD que ocupa toda la pantalla
-        GameObject hudObj = new GameObject("HUD Panel");
-        hudObj.transform.SetParent(mainUI.transform, false);
-        var hudRect = hudObj.AddComponent<RectTransform>();
+        // IMPORTANTE: crear con RectTransform y estirarlo a toda la pantalla
+        hudPanel = new GameObject("HUD Panel", typeof(RectTransform));
+        hudPanel.transform.SetParent(mainUI.transform, false);
+
+        var hudRect = hudPanel.GetComponent<RectTransform>();
         hudRect.anchorMin = Vector2.zero;
         hudRect.anchorMax = Vector2.one;
         hudRect.offsetMin = Vector2.zero;
         hudRect.offsetMax = Vector2.zero;
-        hudPanel = hudObj;
 
-        // ===== STATUS (arriba-izquierda) =====
-        GameObject statusObj = new GameObject("Status Text");
-        statusObj.transform.SetParent(hudPanel.transform, false);
-        statusText = statusObj.AddComponent<Text>();
-        statusText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        statusText.fontSize = 16;
-        statusText.color = Color.white;
-        statusText.text = "Status: Normal";
-        statusText.alignment = TextAnchor.UpperLeft;
-        statusText.raycastTarget = false;
+        // STATUS (arriba-izquierda)
+        statusText = CreateText("Status Text", hudPanel.transform, "Status: READY", 16, Color.white, TextAnchor.UpperLeft);
+        var r1 = statusText.rectTransform;
+        r1.anchorMin = new Vector2(0f, 1f);
+        r1.anchorMax = new Vector2(0f, 1f);
+        r1.pivot = new Vector2(0f, 1f);
+        r1.anchoredPosition = new Vector2(10f, -10f);
+        r1.sizeDelta = new Vector2(520f, 40f);
 
-        RectTransform statusRect = statusText.GetComponent<RectTransform>();
-        statusRect.anchorMin = new Vector2(0f, 1f);
-        statusRect.anchorMax = new Vector2(0f, 1f);
-        statusRect.pivot    = new Vector2(0f, 1f);
-        statusRect.anchoredPosition = new Vector2(10f, -10f);
-        statusRect.sizeDelta = new Vector2(520f, 60f);
+        // TIMER (arriba‑derecha)
+        timerText = CreateText("Timer Text", hudPanel.transform, "Time: 00:00", 22, Color.yellow, TextAnchor.UpperRight);
+        var r2 = timerText.rectTransform;
+        r2.anchorMin = new Vector2(1f, 1f);
+        r2.anchorMax = new Vector2(1f, 1f);
+        r2.pivot = new Vector2(1f, 1f);
+        r2.anchoredPosition = new Vector2(-10f, -10f);
+        r2.sizeDelta = new Vector2(300f, 40f);
 
-        // ===== TIMER (arriba-derecha) =====
-        GameObject timerObj = new GameObject("Timer Text");
-        timerObj.transform.SetParent(hudPanel.transform, false);
-        timerText = timerObj.AddComponent<Text>();
-        timerText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        timerText.fontSize = 18;
-        timerText.color = Color.yellow;
-        timerText.text = "Time: 00:00";
-        timerText.alignment = TextAnchor.UpperRight;
-        timerText.raycastTarget = false;
-
-        RectTransform timerRect = timerText.GetComponent<RectTransform>();
-        timerRect.anchorMin = new Vector2(1f, 1f);
-        timerRect.anchorMax = new Vector2(1f, 1f);
-        timerRect.pivot    = new Vector2(1f, 1f);
-        timerRect.anchoredPosition = new Vector2(-10f, -10f);
-        timerRect.sizeDelta = new Vector2(260f, 40f);
-
-        // ===== ESCAPE PROGRESS (abajo-izquierda) =====
-        GameObject escapeObj = new GameObject("Escape Progress Text");
-        escapeObj.transform.SetParent(hudPanel.transform, false);
-        escapeProgressText = escapeObj.AddComponent<Text>();
-        escapeProgressText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        escapeProgressText.fontSize = 16;
-        escapeProgressText.color = Color.green;
-        escapeProgressText.text = "";
-        escapeProgressText.alignment = TextAnchor.LowerLeft;
-        escapeProgressText.raycastTarget = false;
-
-        RectTransform escapeRect = escapeProgressText.GetComponent<RectTransform>();
-        escapeRect.anchorMin = new Vector2(0f, 0f);
-        escapeRect.anchorMax = new Vector2(0f, 0f);
-        escapeRect.pivot    = new Vector2(0f, 0f);
-        escapeRect.anchoredPosition = new Vector2(10f, 10f);
-        escapeRect.sizeDelta = new Vector2(620f, 40f);
+        // ESCAPE PROGRESS (abajo‑izquierda)
+        escapeProgressText = CreateText("Escape Progress Text", hudPanel.transform, "", 16, Color.green, TextAnchor.LowerLeft);
+        var r3 = escapeProgressText.rectTransform;
+        r3.anchorMin = new Vector2(0f, 0f);
+        r3.anchorMax = new Vector2(0f, 0f);
+        r3.pivot = new Vector2(0f, 0f);
+        r3.anchoredPosition = new Vector2(10f, 10f);
+        r3.sizeDelta = new Vector2(640f, 30f);
     }
-    
+
     void CreateGameOverPanel()
     {
-        GameObject p = new GameObject("Game Over Panel");
+        var p = new GameObject("Game Over Panel", typeof(RectTransform));
         p.transform.SetParent(mainUI.transform, false);
         gameOverPanel = p;
 
-        Image bg = p.AddComponent<Image>();
+        var bg = p.AddComponent<Image>();
         bg.color = new Color(0, 0, 0, 0.8f);
 
         var r = p.GetComponent<RectTransform>();
-        r.anchorMin = Vector2.zero;
-        r.anchorMax = Vector2.one;
-        r.offsetMin = Vector2.zero;
-        r.offsetMax = Vector2.zero;
-        
-        // Título
-        GameObject tObj = new GameObject("Game Over Text");
-        tObj.transform.SetParent(p.transform, false);
-        gameOverText = tObj.AddComponent<Text>();
-        gameOverText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        gameOverText.fontSize = 48;
-        gameOverText.color = Color.red;
-        gameOverText.text = "GAME OVER";
-        gameOverText.alignment = TextAnchor.MiddleCenter;
-        gameOverText.raycastTarget = false;
+        r.anchorMin = Vector2.zero; r.anchorMax = Vector2.one;
+        r.offsetMin = Vector2.zero; r.offsetMax = Vector2.zero;
 
-        var tr = gameOverText.GetComponent<RectTransform>();
-        tr.anchorMin = tr.anchorMax = new Vector2(0.5f, 0.65f);
-        tr.sizeDelta = new Vector2(600, 100);
+        gameOverText = CreateText("Game Over Text", p.transform, "GAME OVER", 48, Color.red, TextAnchor.MiddleCenter);
+        var tr = gameOverText.rectTransform; tr.anchorMin = tr.anchorMax = new Vector2(0.5f, 0.68f); tr.sizeDelta = new Vector2(600, 90);
 
-        // ÚNICO BOTÓN: RESTART
-        GameObject b1 = new GameObject("Restart Button");
-        b1.transform.SetParent(p.transform, false);
-        restartButton = b1.AddComponent<Button>();
-        Image bi1 = b1.AddComponent<Image>();
-        bi1.color = Color.gray;
+        var restartObj = new GameObject("Restart Button", typeof(RectTransform));
+        restartObj.transform.SetParent(p.transform, false);
+        restartButton = restartObj.AddComponent<Button>();
+        var ri = restartObj.AddComponent<Image>(); ri.color = Color.gray;
+        var rr = restartObj.GetComponent<RectTransform>(); rr.anchorMin = rr.anchorMax = new Vector2(0.5f, 0.42f); rr.sizeDelta = new Vector2(220, 54);
+        var rt = CreateText("Restart Text", restartObj.transform, "RESTART", 20, Color.white, TextAnchor.MiddleCenter);
+        var rtr = rt.rectTransform; rtr.anchorMin = Vector2.zero; rtr.anchorMax = Vector2.one; rtr.offsetMin = Vector2.zero; rtr.offsetMax = Vector2.zero;
 
-        var br1 = restartButton.GetComponent<RectTransform>();
-        br1.anchorMin = br1.anchorMax = new Vector2(0.5f, 0.42f);
-        br1.sizeDelta = new Vector2(240, 56);
-
-        var bt1Obj = new GameObject("Restart Text");
-        bt1Obj.transform.SetParent(b1.transform, false);
-        var bt1 = bt1Obj.AddComponent<Text>();
-        bt1.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        bt1.fontSize = 22;
-        bt1.color = Color.white;
-        bt1.text = "RESTART";
-        bt1.alignment = TextAnchor.MiddleCenter;
-        bt1.raycastTarget = false;
-
-        var btr1 = bt1.GetComponent<RectTransform>();
-        btr1.anchorMin = Vector2.zero;
-        btr1.anchorMax = Vector2.one;
-        btr1.offsetMin = Vector2.zero;
-        btr1.offsetMax = Vector2.zero;
+        var menuObj = new GameObject("Main Menu Button", typeof(RectTransform));
+        menuObj.transform.SetParent(p.transform, false);
+        mainMenuButton = menuObj.AddComponent<Button>();
+        var mi = menuObj.AddComponent<Image>(); mi.color = Color.gray;
+        var mr = menuObj.GetComponent<RectTransform>(); mr.anchorMin = mr.anchorMax = new Vector2(0.5f, 0.30f); mr.sizeDelta = new Vector2(220, 50);
+        var mt = CreateText("Main Menu Text", menuObj.transform, "MAIN MENU", 18, Color.white, TextAnchor.MiddleCenter);
+        var mtr = mt.rectTransform; mtr.anchorMin = Vector2.zero; mtr.anchorMax = Vector2.one; mtr.offsetMin = Vector2.zero; mtr.offsetMax = Vector2.zero;
 
         gameOverPanel.SetActive(false);
     }
-    
+
     void CreateVictoryPanel()
     {
-        GameObject p = new GameObject("Victory Panel");
+        var p = new GameObject("Victory Panel", typeof(RectTransform));
         p.transform.SetParent(mainUI.transform, false);
         victoryPanel = p;
 
-        Image bg = p.AddComponent<Image>();
-        bg.color = new Color(0, 0.5f, 0, 0.8f);
+        var bg = p.AddComponent<Image>(); bg.color = new Color(0, 0.5f, 0, 0.8f);
+        var r = p.GetComponent<RectTransform>(); r.anchorMin = Vector2.zero; r.anchorMax = Vector2.one; r.offsetMin = Vector2.zero; r.offsetMax = Vector2.zero;
 
-        var r = p.GetComponent<RectTransform>();
-        r.anchorMin = Vector2.zero;
-        r.anchorMax = Vector2.one;
-        r.offsetMin = Vector2.zero;
-        r.offsetMax = Vector2.zero;
-        
-        GameObject tObj = new GameObject("Victory Text");
-        tObj.transform.SetParent(p.transform, false);
-        victoryText = tObj.AddComponent<Text>();
-        victoryText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        victoryText.fontSize = 48;
-        victoryText.color = Color.yellow;
-        victoryText.text = "VICTORY!";
-        victoryText.alignment = TextAnchor.MiddleCenter;
-        victoryText.raycastTarget = false;
+        victoryText = CreateText("Victory Text", p.transform, "VICTORY!", 48, Color.yellow, TextAnchor.MiddleCenter);
+        var tr = victoryText.rectTransform; tr.anchorMin = tr.anchorMax = new Vector2(0.5f, 0.70f); tr.sizeDelta = new Vector2(600, 90);
 
-        var tr = victoryText.GetComponent<RectTransform>();
-        tr.anchorMin = tr.anchorMax = new Vector2(0.5f, 0.7f);
-        tr.sizeDelta = new Vector2(600, 100);
-        
-        // Play Again
-        GameObject b1 = new GameObject("Victory Restart Button");
-        b1.transform.SetParent(p.transform, false);
-        victoryRestartButton = b1.AddComponent<Button>();
-        Image bi1 = b1.AddComponent<Image>(); 
-        bi1.color = Color.green;
-
-        var br1 = victoryRestartButton.GetComponent<RectTransform>();
-        br1.anchorMin = br1.anchorMax = new Vector2(0.5f, 0.42f);
-        br1.sizeDelta = new Vector2(220, 54);
-
-        var bt1 = new GameObject("Victory Restart Text").AddComponent<Text>();
-        bt1.transform.SetParent(b1.transform, false);
-        bt1.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); 
-        bt1.fontSize = 20; 
-        bt1.color = Color.white; 
-        bt1.text = "PLAY AGAIN"; 
-        bt1.alignment = TextAnchor.MiddleCenter;
-        bt1.raycastTarget = false;
-
-        var btr1 = bt1.GetComponent<RectTransform>();
-        btr1.anchorMin = Vector2.zero; 
-        btr1.anchorMax = Vector2.one; 
-        btr1.offsetMin = Vector2.zero; 
-        btr1.offsetMax = Vector2.zero;
-        
-        // Main Menu (solo en Victory)
-        GameObject b2 = new GameObject("Victory Main Menu Button");
-        b2.transform.SetParent(p.transform, false);
-        victoryMainMenuButton = b2.AddComponent<Button>();
-        Image bi2 = b2.AddComponent<Image>(); 
-        bi2.color = Color.green;
-
-        var br2 = victoryMainMenuButton.GetComponent<RectTransform>();
-        br2.anchorMin = br2.anchorMax = new Vector2(0.5f, 0.3f);
-        br2.sizeDelta = new Vector2(220, 54);
-
-        var bt2 = new GameObject("Victory Main Menu Text").AddComponent<Text>();
-        bt2.transform.SetParent(b2.transform, false);
-        bt2.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); 
-        bt2.fontSize = 18; 
-        bt2.color = Color.white; 
-        bt2.text = "MAIN MENU"; 
-        bt2.alignment = TextAnchor.MiddleCenter;
-        bt2.raycastTarget = false;
-
-        var btr2 = bt2.GetComponent<RectTransform>(); 
-        btr2.anchorMin = Vector2.zero; 
-        btr2.anchorMax = Vector2.one; 
-        btr2.offsetMin = Vector2.zero; 
-        btr2.offsetMax = Vector2.zero;
+        var againObj = new GameObject("Play Again Button", typeof(RectTransform));
+        againObj.transform.SetParent(p.transform, false);
+        victoryRestartButton = againObj.AddComponent<Button>();
+        var ai = againObj.AddComponent<Image>(); ai.color = Color.green;
+        var ar = againObj.GetComponent<RectTransform>(); ar.anchorMin = ar.anchorMax = new Vector2(0.5f, 0.42f); ar.sizeDelta = new Vector2(250, 60);
+        var at = CreateText("Play Again Text", againObj.transform, "PLAY AGAIN", 24, Color.white, TextAnchor.MiddleCenter);
+        var atr = at.rectTransform; atr.anchorMin = Vector2.zero; atr.anchorMax = Vector2.one; atr.offsetMin = Vector2.zero; atr.offsetMax = Vector2.zero;
 
         victoryPanel.SetActive(false);
     }
-    
+
     void SetupUI()
     {
         if (restartButton != null) restartButton.onClick.AddListener(RestartGame);
+        if (mainMenuButton != null) mainMenuButton.onClick.AddListener(GoToMainMenu);
         if (victoryRestartButton != null) victoryRestartButton.onClick.AddListener(RestartGame);
-        if (victoryMainMenuButton != null) victoryMainMenuButton.onClick.AddListener(GoToMainMenu);
-        
+
         if (gameOverPanel != null) gameOverPanel.SetActive(false);
         if (victoryPanel != null) victoryPanel.SetActive(false);
         if (hudPanel != null) hudPanel.SetActive(true);
     }
-    
+
     void SetupAudio()
     {
         if (gameAudioSource == null) gameAudioSource = gameObject.AddComponent<AudioSource>();
@@ -314,15 +219,17 @@ public class GameManager : MonoBehaviour
             gameAudioSource.Play();
         }
     }
-    
+
+    // ---------- LOOP ----------
     void StartGame()
     {
         gameStarted = true; gameOver = false; victoryAchieved = false; startTime = Time.time;
     }
-    
+
     void Update()
     {
         if (!gameStarted || gameOver || victoryAchieved) return;
+
         gameTime = Time.time - startTime;
         UpdateUITexts();
         CheckGameConditions();
@@ -330,96 +237,127 @@ public class GameManager : MonoBehaviour
 
     void UpdateUITexts()
     {
-        if (timerText != null && showTimer)
+        UpdateMainTimer();
+        UpdateStatusText();
+        UpdateEscapeProgress();
+    }
+
+    void UpdateMainTimer()
+    {
+        if (enemy != null && !enemy.IsNPCActive())
+        {
+            int s = Mathf.CeilToInt(enemy.GetActivationCountdown());
+            if (s > 0) { timerText.text = $"🤖 NPC Activating: {s}"; timerText.color = Color.white; timerText.fontSize = 24; return; }
+        }
+
+        if (enemy != null && enemy.IsInDetectionDelay() && enemy.GetDetectionSecondsLeft() > 0)
+        {
+            int s = enemy.GetDetectionSecondsLeft();
+            timerText.text = $"⚠️ ESCAPE! {s}";
+            timerText.color = Color.red;
+            timerText.fontSize = 36;
+            return;
+        }
+
+        SafeZone sz = FindFirstObjectByType<SafeZone>();
+        if (sz != null && sz.IsPlayerInZone())
+        {
+            float left = Mathf.Max(0f, 5f - sz.GetTimeInZone());
+            int s = Mathf.CeilToInt(left);
+            if (s > 0) { timerText.text = $"🛡️ SAFE: {s}"; timerText.color = Color.cyan; timerText.fontSize = 30; return; }
+        }
+
+        if (showTimer)
         {
             int m = Mathf.FloorToInt(gameTime / 60f);
             int s = Mathf.FloorToInt(gameTime % 60f);
             timerText.text = $"Time: {m:00}:{s:00}";
+            timerText.color = Color.yellow;
+            timerText.fontSize = 20;
         }
-        UpdateStatusText();
-        UpdateEscapeProgress();
     }
-    
+
     void UpdateStatusText()
     {
         if (statusText == null) return;
+
         string status = "READY";
         if (player != null && enemy != null)
         {
             if (player.IsHiddenForNPC()) status = "HIDDEN";
             else if (enemy.IsPlayerDetected()) status = "DETECTED!";
             else status = "NORMAL";
+
             status += player.IsPlayerTransformed() ? " | CUBE" : " | SPHERE";
             status += $" | Dist: {enemy.GetDistanceToPlayer():F1}m";
         }
         statusText.text = status;
     }
-    
+
     void UpdateEscapeProgress()
     {
         if (escapeProgressText == null || !showEscapeProgress) return;
 
-        // SAFE ZONE primero
-        SafeZone safeZone = FindFirstObjectByType<SafeZone>();
-        if (safeZone != null && safeZone.IsPlayerInZone())
+        SafeZone sz = FindFirstObjectByType<SafeZone>();
+        if (sz != null && sz.IsPlayerInZone())
         {
-            float p = safeZone.GetWinProgress();   // 0..1
-            float t = safeZone.GetTimeInZone();
-            escapeProgressText.text = $"🛡️ SAFE ZONE: {(p*100f):F0}% ({t:F1}/5.0s)";
+            float p = sz.GetWinProgress();
+            float t = sz.GetTimeInZone();
+            escapeProgressText.text = $"🛡️ SAFE ZONE: {(p * 100f):F0}% ({t:F1}/5.0s)";
             escapeProgressText.color = Color.cyan;
-
             if (p >= 1f && !IsVictoryAchieved()) TriggerVictory();
             return;
         }
 
-        // Escape por distancia
         if (enemy == null) return;
-        float dist = enemy.GetDistanceToPlayer();
-        float escapeDist = 12f;
-
-        if (dist >= escapeDist)
+        if (enemy.IsInDetectionDelay())
         {
-            float escapeTime = 10f;
-            float cur = enemy.GetEscapeTimer();
-            float pct = (cur / escapeTime) * 100f;
-            escapeProgressText.text = pct >= 100f
-                ? "🎉 ESCAPING! Victory incoming!"
-                : $"🏃 ESCAPING: {pct:F0}% ({cur:F1}/{escapeTime:F0}s)";
-            escapeProgressText.color = pct >= 100f ? Color.yellow : Color.green;
+            escapeProgressText.text = "⚠️ DETECTED! Run or hide!";
+            escapeProgressText.color = Color.red;
+            return;
+        }
+
+        if (player != null && player.IsHiddenForNPC())
+        {
+            escapeProgressText.text = "🫥 Hidden - Enemy can't see you";
+            escapeProgressText.color = Color.green;
+        }
+        else if (enemy.IsPlayerDetected())
+        {
+            escapeProgressText.text = "👁️ Spotted - Find cover!";
+            escapeProgressText.color = new Color(1f, 0.5f, 0f);
         }
         else
         {
-            float pct = (dist / escapeDist) * 100f;
-            escapeProgressText.text = $"Distance to escape: {pct:F0}% ({dist:F1}/{escapeDist:F0}m)";
+            escapeProgressText.text = "🔍 Safe - Enemy patrolling";
             escapeProgressText.color = Color.white;
         }
     }
-    
+
     void CheckGameConditions()
     {
         if (enemy == null) return;
         if (enemy.GetCurrentState() == EnemyNPC.EnemyState.Attacking && !gameOver)
             TriggerGameOver();
     }
-    
+
+    // ---------- STATES ----------
     public void TriggerGameOver()
     {
         if (gameOver) return;
         gameOver = true;
-        if (gameOverSound != null && gameAudioSource != null)
-            gameAudioSource.PlayOneShot(gameOverSound);
+        if (gameOverSound != null && gameAudioSource != null) gameAudioSource.PlayOneShot(gameOverSound);
         StartCoroutine(ShowGameOverPanel());
     }
-    
+
     public void TriggerVictory()
     {
         if (victoryAchieved) return;
         victoryAchieved = true;
-        if (victorySound != null && gameAudioSource != null)
-            gameAudioSource.PlayOneShot(victorySound);
+        if (victorySound != null && gameAudioSource != null) gameAudioSource.PlayOneShot(victorySound);
         StartCoroutine(ShowVictoryPanel());
     }
-    
+
     IEnumerator ShowGameOverPanel()
     {
         yield return new WaitForSeconds(1f);
@@ -427,7 +365,7 @@ public class GameManager : MonoBehaviour
         if (gameOverPanel != null) gameOverPanel.SetActive(true);
         Time.timeScale = 0f;
     }
-    
+
     IEnumerator ShowVictoryPanel()
     {
         yield return new WaitForSeconds(1f);
@@ -435,43 +373,26 @@ public class GameManager : MonoBehaviour
         if (victoryPanel != null) victoryPanel.SetActive(true);
         Time.timeScale = 0f;
     }
-    
+
+    // ---------- SCENES ----------
     public void RestartGame()
     {
         Time.timeScale = 1f;
         SceneManager.LoadScene(SceneManager.GetActiveScene().name);
     }
-    
+
     public void GoToMainMenu()
     {
-        Debug.Log("[GM] Main Menu button pressed");
         Time.timeScale = 1f;
-
-#if UNITY_EDITOR
-        try
-        {
-            SceneManager.LoadScene(mainMenuSceneName);
-            Debug.Log($"[GM] Loading scene '{mainMenuSceneName}'");
-        }
-        catch
-        {
-            Debug.LogWarning($"[GM] Scene '{mainMenuSceneName}' no encontrada. ¿Está en Build Settings?");
-            RestartGame();
-        }
-#else
         if (Application.CanStreamedLevelBeLoaded(mainMenuSceneName))
-        {
-            Debug.Log($"[GM] Loading scene '{mainMenuSceneName}'");
             SceneManager.LoadScene(mainMenuSceneName);
-        }
         else
         {
-            Debug.LogWarning($"[GM] Scene '{mainMenuSceneName}' no encontrada en build. Reiniciando escena actual.");
+            Debug.LogWarning($"Main Menu scene '{mainMenuSceneName}' not found. Restarting current scene.");
             RestartGame();
         }
-#endif
     }
-    
+
     public bool IsGameOver() => gameOver;
     public bool IsVictoryAchieved() => victoryAchieved;
     public float GetGameTime() => gameTime;
